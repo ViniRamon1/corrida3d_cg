@@ -15,25 +15,43 @@
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "external/tinyobjloader/tiny_obj_loader.h"
 
+// ImGui
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_opengl3.h"
+
 // ============= CONFIGURAÇÕES =============
 const std::string MODEL_PATH = "C:/Projetos/modeltest/external/models/teapot.obj";
 const unsigned int SHADOW_WIDTH = 2048, SHADOW_HEIGHT = 2048;
 
-// CONFIGURAÇÃO DE TELA CHEIA
-// true = tela cheia, false = janela
 const bool FULLSCREEN = false;
 const int WINDOW_WIDTH = 1400;
 const int WINDOW_HEIGHT = 900;
 
-// CONFIGURAÇÕES DO CENÁRIO
-const float WALL_LENGTH = 100.0f;  // Comprimento das paredes laterais
-const float WALL_HEIGHT = 4.0f;     // Altura das paredes
-const float WALL_THICKNESS = 0.5f;  // Espessura das paredes
-const float LANE_WIDTH = 18.0f;     // Largura da pista (distância entre paredes)
+// AJUSTE DE ZOOM - Aumente esses valores para mais espaço
+const float CAMERA_DISTANCE = 15.0f;  // Era 10.0f - agora mais longe
+const float CAMERA_HEIGHT = 7.0f;     // Era 5.0f - mais alto
+const float FOV_DEGREES = 60.0f;      // Era 45.0f - campo de visão maior
+
+const float WALL_LENGTH = 100.0f;
+const float WALL_HEIGHT = 12.0f;     // Era 4.0f - Agora 3x mais alto
+const float WALL_THICKNESS = 0.5f;
+const float LANE_WIDTH = 18.0f;
+
+// Tamanho do chão expandido
+const int GROUND_SIZE = 60;  // Era 30 - Agora 2x maior
+const float GROUND_QUAD_SIZE = 1.5f;  // Tamanho dos quadrados do chão
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
+
+// ============= ESTADOS DO JOGO =============
+enum GameState {
+    MENU,
+    PLAYING,
+    GAME_OVER
+};
 
 // ============= ESTRUTURAS =============
 struct GameObject {
@@ -51,29 +69,25 @@ struct Wall {
 };
 
 // ============= VARIÁVEIS GLOBAIS =============
-// Variáveis da tela
 int currentWidth = WINDOW_WIDTH;
 int currentHeight = WINDOW_HEIGHT;
 
-// Variáveis do jogador
+GameState gameState = MENU;
+
 glm::vec3 playerPos = glm::vec3(0.0f, 0.5f, 0.0f);
 float playerSpeed = 0.05f;
 float gameSpeed = 0.08f;
 
-// Variáveis do jogo
 int score = 0;
 int highScore = 0;
-bool gameOver = false;
 float gameTime = 0.0f;
 
-// Variáveis da câmera
-float cameraDistance = 10.0f;
-float cameraHeight = 5.0f;
+float cameraDistance = CAMERA_DISTANCE;
+float cameraHeight = CAMERA_HEIGHT;
 float cameraYaw = -90.0f;
 float cameraPitch = -20.0f;
 float cameraRotSpeed = 0.8f;
 
-// Objetos do jogo
 std::vector<GameObject> obstacles;
 std::vector<GameObject> collectibles;
 const int MAX_OBJECTS = 15;
@@ -82,7 +96,6 @@ float spawnInterval = 1.5f;
 
 std::vector<Wall> walls;
 
-// Geometria
 std::vector<float> playerVertices;
 std::vector<float> cubeVertices;
 std::vector<float> sphereVertices;
@@ -96,19 +109,10 @@ int cubeVertexCount = 0;
 int sphereVertexCount = 0;
 
 GLuint depthMapFBO, depthMap;
-GLuint groundTexture, coinTexture;
+GLuint groundTexture;
 
-// ============= ATUALIZAÇÃO HUD =============
-void updateWindowTitle(GLFWwindow* window, int score, int highScore) {
-    std::string title = "Corrida 3D - Score: " + std::to_string(score) +
-        " | High Score: " + std::to_string(highScore) +
-        " | Controles: WASD + Setas | F11 = Tela Cheia";
-    glfwSetWindowTitle(window, title.c_str());
-}
-
-// ============= CALLBACK PARA TECLAS =============
+// ============= CALLBACKS =============
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-    // Alternar tela cheia com F11
     if (key == GLFW_KEY_F11 && action == GLFW_PRESS) {
         static bool isFullscreen = FULLSCREEN;
         isFullscreen = !isFullscreen;
@@ -128,53 +132,29 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
     }
 }
 
+void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
+    glViewport(0, 0, width, height);
+    currentWidth = width;
+    currentHeight = height;
+}
+
 // ============= GERAÇÃO DE PRIMITIVAS =============
 void generateCube(std::vector<float>& vertices) {
     float s = 1.0f;
     float cubeData[] = {
-        -s,-s, s,  0, 0, 1,  0,0,
-         s,-s, s,  0, 0, 1,  1,0,
-         s, s, s,  0, 0, 1,  1,1,
-        -s,-s, s,  0, 0, 1,  0,0,
-         s, s, s,  0, 0, 1,  1,1,
-        -s, s, s,  0, 0, 1,  0,1,
-
-         s,-s,-s,  0, 0,-1,  0,0,
-        -s,-s,-s,  0, 0,-1,  1,0,
-        -s, s,-s,  0, 0,-1,  1,1,
-         s,-s,-s,  0, 0,-1,  0,0,
-        -s, s,-s,  0, 0,-1,  1,1,
-         s, s,-s,  0, 0,-1,  0,1,
-
-         s,-s, s,  1, 0, 0,  0,0,
-         s,-s,-s,  1, 0, 0,  1,0,
-         s, s,-s,  1, 0, 0,  1,1,
-         s,-s, s,  1, 0, 0,  0,0,
-         s, s,-s,  1, 0, 0,  1,1,
-         s, s, s,  1, 0, 0,  0,1,
-
-        -s,-s,-s, -1, 0, 0,  0,0,
-        -s,-s, s, -1, 0, 0,  1,0,
-        -s, s, s, -1, 0, 0,  1,1,
-        -s,-s,-s, -1, 0, 0,  0,0,
-        -s, s, s, -1, 0, 0,  1,1,
-        -s, s,-s, -1, 0, 0,  0,1,
-
-        -s, s, s,  0, 1, 0,  0,0,
-         s, s, s,  0, 1, 0,  1,0,
-         s, s,-s,  0, 1, 0,  1,1,
-        -s, s, s,  0, 1, 0,  0,0,
-         s, s,-s,  0, 1, 0,  1,1,
-        -s, s,-s,  0, 1, 0,  0,1,
-
-        -s,-s,-s,  0,-1, 0,  0,0,
-         s,-s,-s,  0,-1, 0,  1,0,
-         s,-s, s,  0,-1, 0,  1,1,
-        -s,-s,-s,  0,-1, 0,  0,0,
-         s,-s, s,  0,-1, 0,  1,1,
-        -s,-s, s,  0,-1, 0,  0,1,
+        -s,-s, s,  0, 0, 1,  0,0,  s,-s, s,  0, 0, 1,  1,0,  s, s, s,  0, 0, 1,  1,1,
+        -s,-s, s,  0, 0, 1,  0,0,  s, s, s,  0, 0, 1,  1,1, -s, s, s,  0, 0, 1,  0,1,
+         s,-s,-s,  0, 0,-1,  0,0, -s,-s,-s,  0, 0,-1,  1,0, -s, s,-s,  0, 0,-1,  1,1,
+         s,-s,-s,  0, 0,-1,  0,0, -s, s,-s,  0, 0,-1,  1,1,  s, s,-s,  0, 0,-1,  0,1,
+         s,-s, s,  1, 0, 0,  0,0,  s,-s,-s,  1, 0, 0,  1,0,  s, s,-s,  1, 0, 0,  1,1,
+         s,-s, s,  1, 0, 0,  0,0,  s, s,-s,  1, 0, 0,  1,1,  s, s, s,  1, 0, 0,  0,1,
+        -s,-s,-s, -1, 0, 0,  0,0, -s,-s, s, -1, 0, 0,  1,0, -s, s, s, -1, 0, 0,  1,1,
+        -s,-s,-s, -1, 0, 0,  0,0, -s, s, s, -1, 0, 0,  1,1, -s, s,-s, -1, 0, 0,  0,1,
+        -s, s, s,  0, 1, 0,  0,0,  s, s, s,  0, 1, 0,  1,0,  s, s,-s,  0, 1, 0,  1,1,
+        -s, s, s,  0, 1, 0,  0,0,  s, s,-s,  0, 1, 0,  1,1, -s, s,-s,  0, 1, 0,  0,1,
+        -s,-s,-s,  0,-1, 0,  0,0,  s,-s,-s,  0,-1, 0,  1,0,  s,-s, s,  0,-1, 0,  1,1,
+        -s,-s,-s,  0,-1, 0,  0,0,  s,-s, s,  0,-1, 0,  1,1, -s,-s, s,  0,-1, 0,  0,1,
     };
-
     vertices.assign(cubeData, cubeData + sizeof(cubeData) / sizeof(float));
 }
 
@@ -198,14 +178,9 @@ void generateSphere(std::vector<float>& vertices, int segments = 20) {
             float u = (float)lon / segments;
             float v = (float)lat / segments;
 
-            tempVerts.push_back(x * radius);
-            tempVerts.push_back(y * radius);
-            tempVerts.push_back(z * radius);
-            tempVerts.push_back(x);
-            tempVerts.push_back(y);
-            tempVerts.push_back(z);
-            tempVerts.push_back(u);
-            tempVerts.push_back(v);
+            tempVerts.push_back(x * radius); tempVerts.push_back(y * radius); tempVerts.push_back(z * radius);
+            tempVerts.push_back(x); tempVerts.push_back(y); tempVerts.push_back(z);
+            tempVerts.push_back(u); tempVerts.push_back(v);
         }
     }
 
@@ -214,10 +189,7 @@ void generateSphere(std::vector<float>& vertices, int segments = 20) {
             int first = (lat * (segments + 1)) + lon;
             int second = first + segments + 1;
 
-            int idx1 = first * 8;
-            int idx2 = second * 8;
-            int idx3 = (first + 1) * 8;
-            int idx4 = (second + 1) * 8;
+            int idx1 = first * 8, idx2 = second * 8, idx3 = (first + 1) * 8, idx4 = (second + 1) * 8;
 
             for (int i = 0; i < 8; i++) vertices.push_back(tempVerts[idx1 + i]);
             for (int i = 0; i < 8; i++) vertices.push_back(tempVerts[idx2 + i]);
@@ -230,28 +202,18 @@ void generateSphere(std::vector<float>& vertices, int segments = 20) {
     }
 }
 
-// ============= TEXTURAS =============
 GLuint generateGrassTexture() {
     int width = 256, height = 256;
     std::vector<unsigned char> data(width * height * 3);
 
-    glm::vec3 grass1(0.4f, 0.7f, 0.3f);
-    glm::vec3 grass2(0.35f, 0.65f, 0.25f);
-    glm::vec3 grass3(0.45f, 0.75f, 0.35f);
+    glm::vec3 grass1(0.4f, 0.7f, 0.3f), grass2(0.35f, 0.65f, 0.25f), grass3(0.45f, 0.75f, 0.35f);
 
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             int idx = (y * width + x) * 3;
-
             int block = ((x / 16) + (y / 16)) % 3;
-            glm::vec3 color;
-
-            if (block == 0) color = grass1;
-            else if (block == 1) color = grass2;
-            else color = grass3;
-
-            float noise = (rand() % 100) / 1000.0f;
-            color += glm::vec3(noise);
+            glm::vec3 color = (block == 0) ? grass1 : (block == 1) ? grass2 : grass3;
+            color += glm::vec3((rand() % 100) / 1000.0f);
 
             data[idx + 0] = static_cast<unsigned char>(glm::clamp(color.r, 0.0f, 1.0f) * 255);
             data[idx + 1] = static_cast<unsigned char>(glm::clamp(color.g, 0.0f, 1.0f) * 255);
@@ -264,7 +226,6 @@ GLuint generateGrassTexture() {
     glBindTexture(GL_TEXTURE_2D, textureID);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data.data());
     glGenerateMipmap(GL_TEXTURE_2D);
-
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
@@ -275,7 +236,6 @@ GLuint generateGrassTexture() {
 
 void setupShadowMapping() {
     glGenFramebuffers(1, &depthMapFBO);
-
     glGenTextures(1, &depthMap);
     glBindTexture(GL_TEXTURE_2D, depthMap);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
@@ -308,7 +268,6 @@ bool loadOBJ(const std::string& path, std::vector<float>& vertices) {
         for (size_t f = 0; f < shape.mesh.indices.size() / 3; f++) {
             for (size_t v = 0; v < 3; v++) {
                 auto idx = shape.mesh.indices[3 * f + v];
-
                 vertices.push_back(attrib.vertices[3 * idx.vertex_index + 0]);
                 vertices.push_back(attrib.vertices[3 * idx.vertex_index + 1]);
                 vertices.push_back(attrib.vertices[3 * idx.vertex_index + 2]);
@@ -319,9 +278,7 @@ bool loadOBJ(const std::string& path, std::vector<float>& vertices) {
                     vertices.push_back(attrib.normals[3 * idx.normal_index + 2]);
                 }
                 else {
-                    vertices.push_back(0.0f);
-                    vertices.push_back(1.0f);
-                    vertices.push_back(0.0f);
+                    vertices.push_back(0.0f); vertices.push_back(1.0f); vertices.push_back(0.0f);
                 }
 
                 if (idx.texcoord_index >= 0) {
@@ -329,8 +286,7 @@ bool loadOBJ(const std::string& path, std::vector<float>& vertices) {
                     vertices.push_back(attrib.texcoords[2 * idx.texcoord_index + 1]);
                 }
                 else {
-                    vertices.push_back(0.0f);
-                    vertices.push_back(0.0f);
+                    vertices.push_back(0.0f); vertices.push_back(0.0f);
                 }
             }
         }
@@ -338,24 +294,18 @@ bool loadOBJ(const std::string& path, std::vector<float>& vertices) {
     return true;
 }
 
-void generateGround(std::vector<float>& vertices, int size = 30, float quadSize = 1.0f) {
+void generateGround(std::vector<float>& vertices, int size = GROUND_SIZE, float quadSize = GROUND_QUAD_SIZE) {
     for (int x = -size; x < size; ++x) {
         for (int z = -size; z < size; ++z) {
-            float x0 = x * quadSize;
-            float x1 = (x + 1) * quadSize;
-            float z0 = z * quadSize;
-            float z1 = (z + 1) * quadSize;
-
-            float u0 = x + size;
-            float u1 = x + size + 1;
-            float v0 = z + size;
-            float v1 = z + size + 1;
+            float x0 = x * quadSize, x1 = (x + 1) * quadSize;
+            float z0 = z * quadSize, z1 = (z + 1) * quadSize;
+            float u0 = x + size, u1 = x + size + 1;
+            float v0 = z + size, v1 = z + size + 1;
 
             vertices.insert(vertices.end(), {
                 x0, 0.0f, z0,  0.0f, 1.0f, 0.0f,  u0, v0,
                 x1, 0.0f, z0,  0.0f, 1.0f, 0.0f,  u1, v0,
                 x1, 0.0f, z1,  0.0f, 1.0f, 0.0f,  u1, v1,
-
                 x0, 0.0f, z0,  0.0f, 1.0f, 0.0f,  u0, v0,
                 x1, 0.0f, z1,  0.0f, 1.0f, 0.0f,  u1, v1,
                 x0, 0.0f, z1,  0.0f, 1.0f, 0.0f,  u0, v1
@@ -386,11 +336,11 @@ void spawnObject(int type) {
 }
 
 void updateGame(float deltaTime, GLFWwindow* window) {
-    if (gameOver) return;
+    if (gameState != PLAYING) return;
 
     gameTime += deltaTime;
-
     spawnTimer += deltaTime;
+
     if (spawnTimer >= spawnInterval) {
         spawnTimer = 0.0f;
         if (obstacles.size() < MAX_OBJECTS / 2) spawnObject(0);
@@ -402,17 +352,8 @@ void updateGame(float deltaTime, GLFWwindow* window) {
             obs.position.z += gameSpeed;
             float dist = glm::length(obs.position - playerPos);
             if (dist < 1.2f) {
-                gameOver = true;
+                gameState = GAME_OVER;
                 if (score > highScore) highScore = score;
-                updateWindowTitle(window, score, highScore);
-                std::cout << "\n╔═══════════════════════════╗" << std::endl;
-                std::cout << "║      GAME OVER!           ║" << std::endl;
-                std::cout << "║                           ║" << std::endl;
-                std::cout << "║  Score: " << score << " pontos      ║" << std::endl;
-                std::cout << "║  High Score: " << highScore << "       ║" << std::endl;
-                std::cout << "║                           ║" << std::endl;
-                std::cout << "║  Pressione R para jogar   ║" << std::endl;
-                std::cout << "╚═══════════════════════════╝" << std::endl;
             }
             if (obs.position.z > 8.0f) obs.active = false;
         }
@@ -427,8 +368,6 @@ void updateGame(float deltaTime, GLFWwindow* window) {
             if (dist < 1.2f) {
                 col.active = false;
                 score += 10;
-                updateWindowTitle(window, score, highScore);
-                std::cout << "★ MOEDA! +10 pontos | Score: " << score << std::endl;
             }
             if (col.position.z > 8.0f) col.active = false;
         }
@@ -444,16 +383,36 @@ void processInput(GLFWwindow* window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
-    if (gameOver) {
-        if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
-            gameOver = false;
+    if (gameState == MENU) {
+        if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS ||
+            glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS) {
+            gameState = PLAYING;
             score = 0;
             gameTime = 0.0f;
             playerPos = glm::vec3(0.0f, 0.5f, 0.0f);
             obstacles.clear();
             collectibles.clear();
-            updateWindowTitle(window, score, highScore);
-            std::cout << "\n=== NOVO JOGO ===\n" << std::endl;
+        }
+        return;
+    }
+
+    if (gameState == GAME_OVER) {
+        if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS ||
+            glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+            gameState = PLAYING;
+            score = 0;
+            gameTime = 0.0f;
+            playerPos = glm::vec3(0.0f, 0.5f, 0.0f);
+            obstacles.clear();
+            collectibles.clear();
+        }
+        if (glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS) {
+            gameState = MENU;
+            score = 0;
+            gameTime = 0.0f;
+            playerPos = glm::vec3(0.0f, 0.5f, 0.0f);
+            obstacles.clear();
+            collectibles.clear();
         }
         return;
     }
@@ -476,12 +435,6 @@ void processInput(GLFWwindow* window) {
     if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) cameraPitch -= cameraRotSpeed;
 
     cameraPitch = glm::clamp(cameraPitch, -89.0f, 89.0f);
-}
-
-void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
-    glViewport(0, 0, width, height);
-    currentWidth = width;
-    currentHeight = height;
 }
 
 void checkShaderCompile(GLuint shader, const char* type) {
@@ -519,7 +472,6 @@ int main() {
 
     GLFWwindow* window;
 
-    // Configurar janela ou tela cheia
     if (FULLSCREEN) {
         GLFWmonitor* monitor = glfwGetPrimaryMonitor();
         const GLFWvidmode* mode = glfwGetVideoMode(monitor);
@@ -529,8 +481,6 @@ int main() {
     }
     else {
         window = glfwCreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Corrida 3D - CG UFCA", nullptr, nullptr);
-        currentWidth = WINDOW_WIDTH;
-        currentHeight = WINDOW_HEIGHT;
     }
 
     if (!window) {
@@ -541,13 +491,20 @@ int main() {
 
     glfwMakeContextCurrent(window);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
-    glfwSetKeyCallback(window, key_callback);  // Callback para F11
-    updateWindowTitle(window, 0, 0);
+    glfwSetKeyCallback(window, key_callback);
 
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
         std::cerr << "Falha ao inicializar GLAD\n";
         return -1;
     }
+
+    // Inicializar ImGui
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    ImGui::StyleColorsDark();
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 330");
 
     glEnable(GL_DEPTH_TEST);
 
@@ -590,28 +547,14 @@ int main() {
     GLuint groundVAO, groundVBO;
     setupVAO(groundVAO, groundVBO, groundVertices);
 
-    // ============= PAREDES AJUSTADAS =============
-    // As paredes agora cobrem toda a extensão da pista
     float halfWidth = LANE_WIDTH / 2.0f;
-    float wallStartZ = -WALL_LENGTH / 2.0f;  // Começa bem atrás
-    float wallCenterZ = 0.0f;                 // Centro da pista
+    float wallStartZ = -WALL_LENGTH / 2.0f;
+    float wallCenterZ = 0.0f;
 
     walls = {
-        // Parede esquerda (X negativo)
-        {
-            glm::vec3(-halfWidth, WALL_HEIGHT / 2.0f, wallCenterZ),
-            glm::vec3(WALL_THICKNESS, WALL_HEIGHT, WALL_LENGTH)
-        },
-        // Parede direita (X positivo)
-        {
-            glm::vec3(halfWidth, WALL_HEIGHT / 2.0f, wallCenterZ),
-            glm::vec3(WALL_THICKNESS, WALL_HEIGHT, WALL_LENGTH)
-        },
-        // Parede de trás (opcional - pode remover se quiser)
-        {
-            glm::vec3(0.0f, WALL_HEIGHT / 2.0f, wallStartZ),
-            glm::vec3(LANE_WIDTH + WALL_THICKNESS * 2, WALL_HEIGHT, WALL_THICKNESS)
-        }
+        {glm::vec3(-halfWidth, WALL_HEIGHT / 2.0f, wallCenterZ), glm::vec3(WALL_THICKNESS, WALL_HEIGHT, WALL_LENGTH)},
+        {glm::vec3(halfWidth, WALL_HEIGHT / 2.0f, wallCenterZ), glm::vec3(WALL_THICKNESS, WALL_HEIGHT, WALL_LENGTH)},
+        {glm::vec3(0.0f, WALL_HEIGHT / 2.0f, wallStartZ), glm::vec3(LANE_WIDTH + WALL_THICKNESS * 2, WALL_HEIGHT, WALL_THICKNESS)}
     };
 
     groundTexture = generateGrassTexture();
@@ -757,16 +700,6 @@ void main() {
 
     std::cout << "\n╔═════════════════════════════════════════╗" << std::endl;
     std::cout << "║       CORRIDA 3D - BEM-VINDO!           ║" << std::endl;
-    std::cout << "╠═════════════════════════════════════════╣" << std::endl;
-    std::cout << "║  CONTROLES:                             ║" << std::endl;
-    std::cout << "║    WASD - Mover jogador                 ║" << std::endl;
-    std::cout << "║    Setas - Rotacionar camera            ║" << std::endl;
-    std::cout << "║    F11 - Alternar tela cheia            ║" << std::endl;
-    std::cout << "║    R - Reiniciar apos Game Over         ║" << std::endl;
-    std::cout << "║                                         ║" << std::endl;
-    std::cout << "║  OBJETIVO:                              ║" << std::endl;
-    std::cout << "║    Desvie dos CACTOS VERMELHOS!         ║" << std::endl;
-    std::cout << "║    Colete MOEDAS DOURADAS! (+10pts)     ║" << std::endl;
     std::cout << "╚═════════════════════════════════════════╝\n" << std::endl;
 
     while (!glfwWindowShouldClose(window)) {
@@ -797,53 +730,62 @@ void main() {
             glDrawArrays(GL_TRIANGLES, 0, count);
             };
 
-        glm::mat4 groundModel = glm::mat4(1.0f);
-        renderDepth(groundModel, groundVAO, groundVertices.size() / 8);
+        if (gameState == PLAYING) {
+            glm::mat4 groundModel = glm::mat4(1.0f);
+            renderDepth(groundModel, groundVAO, groundVertices.size() / 8);
 
-        glm::mat4 playerModel = glm::translate(glm::mat4(1.0f), playerPos);
-        playerModel = glm::scale(playerModel, glm::vec3(0.15f));
-        renderDepth(playerModel, playerVAO, playerVertexCount);
+            glm::mat4 playerModel = glm::translate(glm::mat4(1.0f), playerPos);
+            playerModel = glm::scale(playerModel, glm::vec3(0.15f));
+            renderDepth(playerModel, playerVAO, playerVertexCount);
 
-        for (const auto& obs : obstacles) {
-            if (obs.active) {
-                glm::mat4 m = glm::translate(glm::mat4(1.0f), obs.position);
-                m = glm::scale(m, obs.scale * glm::vec3(0.15f));
+            for (const auto& obs : obstacles) {
+                if (obs.active) {
+                    glm::mat4 m = glm::translate(glm::mat4(1.0f), obs.position);
+                    m = glm::scale(m, obs.scale * glm::vec3(0.15f));
+                    renderDepth(m, cubeVAO, cubeVertexCount);
+                }
+            }
+
+            for (const auto& col : collectibles) {
+                if (col.active) {
+                    glm::mat4 m = glm::translate(glm::mat4(1.0f), col.position);
+                    m = glm::scale(m, col.scale * glm::vec3(0.12f));
+                    renderDepth(m, sphereVAO, sphereVertexCount);
+                }
+            }
+
+            for (const auto& wall : walls) {
+                glm::mat4 m = glm::translate(glm::mat4(1.0f), wall.position);
+                m = glm::scale(m, wall.scale * glm::vec3(0.15f));
                 renderDepth(m, cubeVAO, cubeVertexCount);
             }
         }
 
-        for (const auto& col : collectibles) {
-            if (col.active) {
-                glm::mat4 m = glm::translate(glm::mat4(1.0f), col.position);
-                m = glm::scale(m, col.scale * glm::vec3(0.12f));
-                renderDepth(m, sphereVAO, sphereVertexCount);
-            }
-        }
-
-        for (const auto& wall : walls) {
-            glm::mat4 m = glm::translate(glm::mat4(1.0f), wall.position);
-            m = glm::scale(m, wall.scale * glm::vec3(0.15f));
-            renderDepth(m, cubeVAO, cubeVertexCount);
-        }
-
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-        // Usar dimensões dinâmicas para viewport
         glViewport(0, 0, currentWidth, currentHeight);
         glClearColor(0.53f, 0.81f, 0.92f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        float yawRad = glm::radians(cameraYaw);
-        float pitchRad = glm::radians(cameraPitch);
-        glm::vec3 cameraDir(cos(yawRad) * cos(pitchRad), sin(pitchRad), sin(yawRad) * cos(pitchRad));
-        cameraDir = glm::normalize(cameraDir);
+        glm::vec3 cameraPos;
+        glm::mat4 view;
 
-        glm::vec3 cameraPos = playerPos - cameraDir * cameraDistance + glm::vec3(0.0f, cameraHeight, 0.0f);
-        glm::mat4 view = glm::lookAt(cameraPos, playerPos, glm::vec3(0.0f, 1.0f, 0.0f));
+        if (gameState == PLAYING) {
+            float yawRad = glm::radians(cameraYaw);
+            float pitchRad = glm::radians(cameraPitch);
+            glm::vec3 cameraDir(cos(yawRad) * cos(pitchRad), sin(pitchRad), sin(yawRad) * cos(pitchRad));
+            cameraDir = glm::normalize(cameraDir);
 
-        // Atualizar projeção com aspect ratio dinâmico
+            cameraPos = playerPos - cameraDir * cameraDistance + glm::vec3(0.0f, cameraHeight, 0.0f);
+            view = glm::lookAt(cameraPos, playerPos, glm::vec3(0.0f, 1.0f, 0.0f));
+        }
+        else {
+            cameraPos = glm::vec3(0.0f, 5.0f, 10.0f);
+            view = glm::lookAt(cameraPos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        }
+
         float aspectRatio = (float)currentWidth / (float)currentHeight;
-        glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 100.0f);
+        glm::mat4 projection = glm::perspective(glm::radians(FOV_DEGREES), aspectRatio, 0.1f, 100.0f);
 
         glUseProgram(mainProgram);
         glUniform3fv(glGetUniformLocation(mainProgram, "lightPos"), 1, &lightPos[0]);
@@ -862,59 +804,155 @@ void main() {
         glUniform1i(glGetUniformLocation(mainProgram, "useTexture"), 1);
         glUniform1f(glGetUniformLocation(mainProgram, "brightness"), 1.0f);
 
+        glm::mat4 groundModel = glm::mat4(1.0f);
         glUniformMatrix4fv(glGetUniformLocation(mainProgram, "model"), 1, GL_FALSE, &groundModel[0][0]);
         glBindVertexArray(groundVAO);
         glDrawArrays(GL_TRIANGLES, 0, groundVertices.size() / 8);
 
         glUniform1i(glGetUniformLocation(mainProgram, "useTexture"), 0);
 
-        glUniform3f(glGetUniformLocation(mainProgram, "objectColor"), 0.3f, 0.5f, 0.9f);
-        glUniform1f(glGetUniformLocation(mainProgram, "brightness"), 1.0f);
-        glUniformMatrix4fv(glGetUniformLocation(mainProgram, "model"), 1, GL_FALSE, &playerModel[0][0]);
-        glBindVertexArray(playerVAO);
-        glDrawArrays(GL_TRIANGLES, 0, playerVertexCount);
+        if (gameState == PLAYING) {
+            glUniform3f(glGetUniformLocation(mainProgram, "objectColor"), 0.3f, 0.5f, 0.9f);
+            glUniform1f(glGetUniformLocation(mainProgram, "brightness"), 1.0f);
+            glm::mat4 playerModel = glm::translate(glm::mat4(1.0f), playerPos);
+            playerModel = glm::scale(playerModel, glm::vec3(0.15f));
+            glUniformMatrix4fv(glGetUniformLocation(mainProgram, "model"), 1, GL_FALSE, &playerModel[0][0]);
+            glBindVertexArray(playerVAO);
+            glDrawArrays(GL_TRIANGLES, 0, playerVertexCount);
 
-        for (const auto& obs : obstacles) {
-            if (obs.active) {
-                glUniform3fv(glGetUniformLocation(mainProgram, "objectColor"), 1, &obs.color[0]);
-                glUniform1f(glGetUniformLocation(mainProgram, "brightness"), 1.0f);
+            for (const auto& obs : obstacles) {
+                if (obs.active) {
+                    glUniform3fv(glGetUniformLocation(mainProgram, "objectColor"), 1, &obs.color[0]);
+                    glUniform1f(glGetUniformLocation(mainProgram, "brightness"), 1.0f);
 
-                glm::mat4 m = glm::translate(glm::mat4(1.0f), obs.position);
-                m = glm::scale(m, obs.scale * glm::vec3(0.15f));
+                    glm::mat4 m = glm::translate(glm::mat4(1.0f), obs.position);
+                    m = glm::scale(m, obs.scale * glm::vec3(0.15f));
+                    glUniformMatrix4fv(glGetUniformLocation(mainProgram, "model"), 1, GL_FALSE, &m[0][0]);
+                    glBindVertexArray(cubeVAO);
+                    glDrawArrays(GL_TRIANGLES, 0, cubeVertexCount);
+                }
+            }
+
+            for (const auto& col : collectibles) {
+                if (col.active) {
+                    glUniform3fv(glGetUniformLocation(mainProgram, "objectColor"), 1, &col.color[0]);
+                    glUniform1f(glGetUniformLocation(mainProgram, "brightness"), 1.8f);
+
+                    glm::mat4 m = glm::translate(glm::mat4(1.0f), col.position);
+                    m = glm::rotate(m, currentTime * 3.0f, glm::vec3(0.0f, 1.0f, 0.0f));
+                    m = glm::scale(m, col.scale * glm::vec3(0.12f));
+                    glUniformMatrix4fv(glGetUniformLocation(mainProgram, "model"), 1, GL_FALSE, &m[0][0]);
+                    glBindVertexArray(sphereVAO);
+                    glDrawArrays(GL_TRIANGLES, 0, sphereVertexCount);
+                }
+            }
+
+            glUniform3f(glGetUniformLocation(mainProgram, "objectColor"), 0.3f, 0.25f, 0.2f);
+            glUniform1f(glGetUniformLocation(mainProgram, "brightness"), 0.8f);
+
+            for (const auto& wall : walls) {
+                glm::mat4 m = glm::translate(glm::mat4(1.0f), wall.position);
+                m = glm::scale(m, wall.scale * glm::vec3(0.15f));
                 glUniformMatrix4fv(glGetUniformLocation(mainProgram, "model"), 1, GL_FALSE, &m[0][0]);
                 glBindVertexArray(cubeVAO);
                 glDrawArrays(GL_TRIANGLES, 0, cubeVertexCount);
             }
         }
 
-        for (const auto& col : collectibles) {
-            if (col.active) {
-                glUniform3fv(glGetUniformLocation(mainProgram, "objectColor"), 1, &col.color[0]);
-                glUniform1f(glGetUniformLocation(mainProgram, "brightness"), 1.8f);
+        // ImGui UI
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
 
-                glm::mat4 m = glm::translate(glm::mat4(1.0f), col.position);
-                m = glm::rotate(m, currentTime * 3.0f, glm::vec3(0.0f, 1.0f, 0.0f));
-                m = glm::scale(m, col.scale * glm::vec3(0.12f));
-                glUniformMatrix4fv(glGetUniformLocation(mainProgram, "model"), 1, GL_FALSE, &m[0][0]);
-                glBindVertexArray(sphereVAO);
-                glDrawArrays(GL_TRIANGLES, 0, sphereVertexCount);
-            }
+        if (gameState == MENU) {
+            ImGui::SetNextWindowPos(ImVec2(currentWidth / 2.0f - 300, currentHeight / 2.0f - 250));
+            ImGui::SetNextWindowSize(ImVec2(600, 500));
+            ImGui::Begin("Menu Principal", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
+
+            ImGui::SetWindowFontScale(2.5f);
+            ImGui::Text("CORRIDA 3D");
+            ImGui::SetWindowFontScale(1.0f);
+
+            ImGui::Spacing(); ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing(); ImGui::Spacing();
+
+            ImGui::Text("OBJETIVO:");
+            ImGui::BulletText("Desvie dos CACTOS VERMELHOS!");
+            ImGui::BulletText("Colete MOEDAS DOURADAS (+10 pontos)");
+
+            ImGui::Spacing(); ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing(); ImGui::Spacing();
+
+            ImGui::Text("CONTROLES:");
+            ImGui::BulletText("WASD - Mover jogador");
+            ImGui::BulletText("Setas - Rotacionar camera");
+            ImGui::BulletText("F11 - Tela cheia");
+
+            ImGui::Spacing(); ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing(); ImGui::Spacing();
+
+            ImGui::SetWindowFontScale(1.5f);
+            ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Pressione ESPACO para iniciar!");
+            ImGui::SetWindowFontScale(1.0f);
+
+            ImGui::End();
+        }
+        else if (gameState == PLAYING) {
+            // HUD no canto superior direito
+            ImGui::SetNextWindowPos(ImVec2(currentWidth - 250, 10));
+            ImGui::SetNextWindowSize(ImVec2(240, 100));
+            ImGui::Begin("HUD", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+
+            ImGui::SetWindowFontScale(1.5f);
+            ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.0f, 1.0f), "SCORE: %d", score);
+            ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "RECORDE: %d", highScore);
+            ImGui::SetWindowFontScale(1.0f);
+
+            ImGui::End();
+        }
+        else if (gameState == GAME_OVER) {
+            ImGui::SetNextWindowPos(ImVec2(currentWidth / 2.0f - 250, currentHeight / 2.0f - 200));
+            ImGui::SetNextWindowSize(ImVec2(500, 400));
+            ImGui::Begin("Game Over", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
+
+            ImGui::SetWindowFontScale(2.5f);
+            ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "GAME OVER!");
+            ImGui::SetWindowFontScale(1.0f);
+
+            ImGui::Spacing(); ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing(); ImGui::Spacing();
+
+            ImGui::SetWindowFontScale(1.8f);
+            ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.0f, 1.0f), "Pontuacao: %d", score);
+            ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "Recorde: %d", highScore);
+            ImGui::SetWindowFontScale(1.0f);
+
+            ImGui::Spacing(); ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing(); ImGui::Spacing();
+
+            ImGui::SetWindowFontScale(1.3f);
+            ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "R - Jogar novamente");
+            ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "M - Voltar ao menu");
+            ImGui::SetWindowFontScale(1.0f);
+
+            ImGui::End();
         }
 
-        glUniform3f(glGetUniformLocation(mainProgram, "objectColor"), 0.3f, 0.25f, 0.2f);
-        glUniform1f(glGetUniformLocation(mainProgram, "brightness"), 0.8f);
-
-        for (const auto& wall : walls) {
-            glm::mat4 m = glm::translate(glm::mat4(1.0f), wall.position);
-            m = glm::scale(m, wall.scale * glm::vec3(0.15f));
-            glUniformMatrix4fv(glGetUniformLocation(mainProgram, "model"), 1, GL_FALSE, &m[0][0]);
-            glBindVertexArray(cubeVAO);
-            glDrawArrays(GL_TRIANGLES, 0, cubeVertexCount);
-        }
+        ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
+
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
 
     glDeleteVertexArrays(1, &playerVAO);
     glDeleteBuffers(1, &playerVBO);
