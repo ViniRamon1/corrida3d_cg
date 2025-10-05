@@ -62,6 +62,13 @@ int currentWidth = WINDOW_WIDTH;
 int currentHeight = WINDOW_HEIGHT;
 GameState gameState = MENU;
 
+struct ThrusterParticle {
+    glm::vec3 offset;
+    float size;
+    float intensity;
+    float lifetime;
+};
+
 glm::vec3 playerPos = glm::vec3(0.0f, 0.5f, 0.0f);
 glm::vec3 playerVelocity = glm::vec3(0.0f);
 float playerSpeed = 0.05f;
@@ -72,6 +79,8 @@ float gameSpeed = 0.08f;
 int score = 0;
 int highScore = 0;
 float gameTime = 0.0f;
+
+std::vector<ThrusterParticle> thrusterParticles;
 
 float cameraDistance = CAMERA_DISTANCE;
 float cameraHeight = CAMERA_HEIGHT;
@@ -409,6 +418,41 @@ void updateGame(float deltaTime, GLFWwindow* window) {
         [](const GameObject& o) { return !o.active; }), obstacles.end());
     collectibles.erase(std::remove_if(collectibles.begin(), collectibles.end(),
         [](const GameObject& o) { return !o.active; }), collectibles.end());
+
+    for (auto& p : thrusterParticles) {
+        p.lifetime -= deltaTime * 2.0f;
+        p.offset.y += deltaTime * 0.5f;
+        p.size *= 0.98f;
+        p.intensity = p.lifetime;
+    }
+    thrusterParticles.erase(std::remove_if(thrusterParticles.begin(), thrusterParticles.end(),
+        [](const ThrusterParticle& p) { return p.lifetime <= 0.0f; }), thrusterParticles.end());
+
+    static float particleSpawnTimer = 0.0f;
+    particleSpawnTimer += deltaTime;
+    if (particleSpawnTimer >= 0.03f) {
+        particleSpawnTimer = 0.0f;
+
+        glm::vec3 thrusterPositions[4] = {
+            glm::vec3(-0.3f, -0.5f, 0.0f),
+            glm::vec3(0.3f, -0.5f, 0.0f),
+            glm::vec3(-0.15f, -0.3f, -0.2f),
+            glm::vec3(0.15f, -0.3f, -0.2f)
+        };
+
+        for (int i = 0; i < 4; ++i) {
+            ThrusterParticle p;
+            p.offset = thrusterPositions[i] + glm::vec3(
+                (rand() % 100 - 50) / 500.0f,
+                (rand() % 100 - 50) / 500.0f,
+                (rand() % 100 - 50) / 500.0f
+            );
+            p.size = 0.08f + (rand() % 100) / 1000.0f;
+            p.intensity = 1.0f;
+            p.lifetime = 1.0f;
+            thrusterParticles.push_back(p);
+        }
+    }
 }
 
 void processInput(GLFWwindow* window) {
@@ -422,8 +466,13 @@ void processInput(GLFWwindow* window) {
             score = 0;
             gameTime = 0.0f;
             playerPos = glm::vec3(0.0f, 0.5f, 0.0f);
+            playerVelocity = glm::vec3(0.0f);
+            playerRotation = 0.0f;
+            playerTilt = 0.0f;
+            runAnimationTime = 0.0f;
             obstacles.clear();
             collectibles.clear();
+            thrusterParticles.clear();
         }
         return;
     }
@@ -435,16 +484,26 @@ void processInput(GLFWwindow* window) {
             score = 0;
             gameTime = 0.0f;
             playerPos = glm::vec3(0.0f, 0.5f, 0.0f);
+            playerVelocity = glm::vec3(0.0f);
+            playerRotation = 0.0f;
+            playerTilt = 0.0f;
+            runAnimationTime = 0.0f;
             obstacles.clear();
             collectibles.clear();
+            thrusterParticles.clear();
         }
         if (glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS) {
             gameState = MENU;
             score = 0;
             gameTime = 0.0f;
             playerPos = glm::vec3(0.0f, 0.5f, 0.0f);
+            playerVelocity = glm::vec3(0.0f);
+            playerRotation = 0.0f;
+            playerTilt = 0.0f;
+            runAnimationTime = 0.0f;
             obstacles.clear();
             collectibles.clear();
+            thrusterParticles.clear();
         }
         return;
     }
@@ -456,9 +515,18 @@ void processInput(GLFWwindow* window) {
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) moveDir.z += 1.0f;
 
     if (glm::length(moveDir) > 0.0f) {
-        playerPos += glm::normalize(moveDir) * playerSpeed;
+        playerVelocity = glm::normalize(moveDir) * playerSpeed;
+        playerPos += playerVelocity;
         playerPos.x = glm::clamp(playerPos.x, -8.0f, 8.0f);
         playerPos.z = glm::clamp(playerPos.z, -3.0f, 5.0f);
+
+        float targetRotation = atan2(moveDir.x, moveDir.z) * 180.0f / M_PI;
+        playerRotation = glm::mix(playerRotation, targetRotation, 0.2f);
+        playerTilt = glm::clamp(moveDir.x * 15.0f, -20.0f, 20.0f);
+    }
+    else {
+        playerVelocity *= 0.8f;
+        playerTilt *= 0.9f;
     }
 
     if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) cameraYaw -= cameraRotSpeed;
@@ -717,8 +785,23 @@ void main() {
         if (gameState == PLAYING) {
             renderDepth(glm::mat4(1.0f), groundVAO, groundVertices.size() / 8);
 
-            glm::mat4 playerModel = glm::scale(glm::translate(glm::mat4(1.0f), playerPos), glm::vec3(IRONMAN_SCALE));
+            glm::mat4 playerModel = glm::translate(glm::mat4(1.0f), playerPos);
+            float bobAmount = sin(runAnimationTime) * 0.05f;
+            if (glm::length(playerVelocity) > 0.01f) {
+                playerModel = glm::translate(playerModel, glm::vec3(0.0f, bobAmount, 0.0f));
+            }
+            playerModel = glm::rotate(playerModel, glm::radians(playerRotation), glm::vec3(0.0f, 1.0f, 0.0f));
+            playerModel = glm::rotate(playerModel, glm::radians(playerTilt), glm::vec3(0.0f, 0.0f, 1.0f));
+            playerModel = glm::scale(playerModel, glm::vec3(IRONMAN_SCALE));
             renderDepth(playerModel, playerVAO, playerVertexCount);
+
+            for (const auto& particle : thrusterParticles) {
+                glm::mat4 particleModel = glm::translate(glm::mat4(1.0f), playerPos);
+                particleModel = glm::rotate(particleModel, glm::radians(playerRotation), glm::vec3(0.0f, 1.0f, 0.0f));
+                particleModel = glm::translate(particleModel, particle.offset * 8.0f);
+                particleModel = glm::scale(particleModel, glm::vec3(particle.size));
+                renderDepth(particleModel, sphereVAO, sphereVertexCount);
+            }
 
             for (const auto& obs : obstacles) {
                 if (obs.active) {
@@ -815,18 +898,54 @@ void main() {
         }
 
         if (gameState == PLAYING) {
-            glUniform3f(glGetUniformLocation(mainProgram, "objectColor"), 0.3f, 0.5f, 0.9f);
-            glUniform1f(glGetUniformLocation(mainProgram, "brightness"), 1.0f);
-            glm::mat4 playerModel = glm::scale(glm::translate(glm::mat4(1.0f), playerPos), glm::vec3(IRONMAN_SCALE));
+            runAnimationTime += deltaTime * 10.0f;
+
+            glUniform3f(glGetUniformLocation(mainProgram, "objectColor"), 0.8f, 0.1f, 0.1f);
+            glUniform1f(glGetUniformLocation(mainProgram, "brightness"), 1.2f);
+
+            glm::mat4 playerModel = glm::translate(glm::mat4(1.0f), playerPos);
+
+            playerModel = glm::rotate(playerModel, glm::radians(playerRotation), glm::vec3(0.0f, 1.0f, 0.0f));
+
+            float flyTilt = 60.0f;
+            if (glm::length(playerVelocity) > 0.01f) {
+                flyTilt = 70.0f + sin(runAnimationTime) * 5.0f;
+            }
+            playerModel = glm::rotate(playerModel, glm::radians(flyTilt), glm::vec3(1.0f, 0.0f, 0.0f));
+
+            playerModel = glm::rotate(playerModel, glm::radians(playerTilt), glm::vec3(0.0f, 0.0f, 1.0f));
+            playerModel = glm::scale(playerModel, glm::vec3(IRONMAN_SCALE));
+
             glUniformMatrix4fv(glGetUniformLocation(mainProgram, "model"), 1, GL_FALSE, &playerModel[0][0]);
             glBindVertexArray(playerVAO);
             glDrawArrays(GL_TRIANGLES, 0, playerVertexCount);
+
+            for (const auto& particle : thrusterParticles) {
+                float t = particle.lifetime;
+                glm::vec3 color = glm::mix(
+                    glm::vec3(0.2f, 0.5f, 1.0f),
+                    glm::vec3(0.8f, 0.9f, 1.0f),
+                    sin(gameTime * 15.0f + particle.offset.x * 10.0f) * 0.5f + 0.5f
+                );
+                glUniform3fv(glGetUniformLocation(mainProgram, "objectColor"), 1, &color[0]);
+                glUniform1f(glGetUniformLocation(mainProgram, "brightness"), 2.5f * particle.intensity);
+
+                glm::mat4 particleModel = glm::translate(glm::mat4(1.0f), playerPos);
+                particleModel = glm::rotate(particleModel, glm::radians(playerRotation), glm::vec3(0.0f, 1.0f, 0.0f));
+                particleModel = glm::rotate(particleModel, glm::radians(flyTilt), glm::vec3(1.0f, 0.0f, 0.0f));
+                particleModel = glm::translate(particleModel, particle.offset);
+                particleModel = glm::scale(particleModel, glm::vec3(particle.size));
+
+                glUniformMatrix4fv(glGetUniformLocation(mainProgram, "model"), 1, GL_FALSE, &particleModel[0][0]);
+                glBindVertexArray(sphereVAO);
+                glDrawArrays(GL_TRIANGLES, 0, sphereVertexCount);
+            }
 
             for (const auto& obs : obstacles) {
                 if (obs.active) {
                     glUniform3fv(glGetUniformLocation(mainProgram, "objectColor"), 1, &obs.color[0]);
                     glUniform1f(glGetUniformLocation(mainProgram, "brightness"), 1.0f);
-                    glm::mat4 m = glm::scale(glm::translate(glm::mat4(1.0f), obs.position), obs.scale * 0.15f);
+                    glm::mat4 m = glm::scale(glm::translate(glm::mat4(1.0f), obs.position), obs.scale * 0.8f);
                     glUniformMatrix4fv(glGetUniformLocation(mainProgram, "model"), 1, GL_FALSE, &m[0][0]);
                     glBindVertexArray(cubeVAO);
                     glDrawArrays(GL_TRIANGLES, 0, cubeVertexCount);
@@ -835,11 +954,22 @@ void main() {
 
             for (const auto& col : collectibles) {
                 if (col.active) {
+                    float glowIntensity = 2.5f + sin(currentTime * 5.0f) * 0.8f;
                     glUniform3fv(glGetUniformLocation(mainProgram, "objectColor"), 1, &col.color[0]);
-                    glUniform1f(glGetUniformLocation(mainProgram, "brightness"), 1.8f);
+                    glUniform1f(glGetUniformLocation(mainProgram, "brightness"), glowIntensity);
                     glm::mat4 m = glm::rotate(glm::translate(glm::mat4(1.0f), col.position),
                         currentTime * 3.0f, glm::vec3(0.0f, 1.0f, 0.0f));
-                    m = glm::scale(m, col.scale * 0.12f);
+                    m = glm::scale(m, col.scale * 0.7f);
+                    glUniformMatrix4fv(glGetUniformLocation(mainProgram, "model"), 1, GL_FALSE, &m[0][0]);
+                    glBindVertexArray(sphereVAO);
+                    glDrawArrays(GL_TRIANGLES, 0, sphereVertexCount);
+
+                    glm::vec3 glowColor = glm::vec3(1.0f, 1.0f, 0.6f);
+                    glUniform3fv(glGetUniformLocation(mainProgram, "objectColor"), 1, &glowColor[0]);
+                    glUniform1f(glGetUniformLocation(mainProgram, "brightness"), glowIntensity * 0.5f);
+                    m = glm::rotate(glm::translate(glm::mat4(1.0f), col.position),
+                        currentTime * 3.0f, glm::vec3(0.0f, 1.0f, 0.0f));
+                    m = glm::scale(m, col.scale * 0.9f);
                     glUniformMatrix4fv(glGetUniformLocation(mainProgram, "model"), 1, GL_FALSE, &m[0][0]);
                     glBindVertexArray(sphereVAO);
                     glDrawArrays(GL_TRIANGLES, 0, sphereVertexCount);
@@ -949,7 +1079,7 @@ void main() {
     ImGui::DestroyContext();
 
     glDeleteVertexArrays(1, &playerVAO);
-    glDeleteBuffers(1, &playerVBO); 
+    glDeleteBuffers(1, &playerVBO);
     glDeleteVertexArrays(1, &cubeVAO);
     glDeleteBuffers(1, &cubeVBO);
     glDeleteVertexArrays(1, &sphereVAO);
