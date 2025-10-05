@@ -20,27 +20,52 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "external/stb_image.h"
+
 // ============= CONFIGURAÇÕES =============
-const std::string MODEL_PATH = "C:/Projetos/modeltest/external/models/teapot.obj";
-const unsigned int SHADOW_WIDTH = 2048, SHADOW_HEIGHT = 2048;
+// Modelos principais
+const std::string IRONMAN_MODEL_PATH = "C:/Projetos/modeltest/external/models/IronMan/IronMan.obj";
+
+// Nuvens
+const std::string CLOUD_MODEL_PATHS[5] = {
+    "C:/Projetos/modeltest/external/models/cloud/altostratus00.obj",
+    "C:/Projetos/modeltest/external/models/cloud/altostratus01.obj",
+    "C:/Projetos/modeltest/external/models/cloud/cumulus00.obj",
+    "C:/Projetos/modeltest/external/models/cloud/cumulus01.obj",
+    "C:/Projetos/modeltest/external/models/cloud/cumulus02.obj"
+};
+
+// Dragão
+const std::string DRAGON_MODEL_PATH = "C:/Projetos/modeltest/external/models/dragon/dragon.obj";
+
+// Árvores
+const std::string TREE_MODEL_PATHS[2] = {
+    "C:/Projetos/modeltest/external/models/white_oak/white_oak.obj",
+    "C:/Projetos/modeltest/external/models/white_oak/white_oak.obj"
+};
+
+const float IRONMAN_SCALE = 0.005f; // Escala para o modelo Iron Man
+
+const unsigned int SHADOW_WIDTH = 2500, SHADOW_HEIGHT = 2500;
 
 const bool FULLSCREEN = false;
 const int WINDOW_WIDTH = 1400;
 const int WINDOW_HEIGHT = 900;
 
 // AJUSTE DE ZOOM - Aumente esses valores para mais espaço
-const float CAMERA_DISTANCE = 15.0f;  // Era 10.0f - agora mais longe
-const float CAMERA_HEIGHT = 7.0f;     // Era 5.0f - mais alto
-const float FOV_DEGREES = 60.0f;      // Era 45.0f - campo de visão maior
+const float CAMERA_DISTANCE = 10.0f;
+const float CAMERA_HEIGHT = 7.0f;
+const float FOV_DEGREES = 60.0f;
 
 const float WALL_LENGTH = 100.0f;
-const float WALL_HEIGHT = 12.0f;     // Era 4.0f - Agora 3x mais alto
+const float WALL_HEIGHT = 12.0f;
 const float WALL_THICKNESS = 0.5f;
 const float LANE_WIDTH = 18.0f;
 
 // Tamanho do chão expandido
-const int GROUND_SIZE = 60;  // Era 30 - Agora 2x maior
-const float GROUND_QUAD_SIZE = 1.5f;  // Tamanho dos quadrados do chão
+const int GROUND_SIZE = 120;
+const float GROUND_QUAD_SIZE = 1.5f;
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -111,6 +136,74 @@ int sphereVertexCount = 0;
 GLuint depthMapFBO, depthMap;
 GLuint groundTexture;
 
+glm::vec3 sunPos(5.0f, 40.0f, 10.0f); // Posição inicial do sol
+float sunScale = 2.0f; // Tamanho do sol
+
+std::vector<float> cloudVertices[5];
+GLuint cloudVAO[5], cloudVBO[5];
+int cloudVertexCount[5];
+
+// Nuvens
+glm::vec3 cloudPos[10] = {
+    {-30.0f, 30.0f, -40.0f},
+    {-15.0f, 30.0f, -20.0f},
+    {0.0f,   30.0f,  0.0f},
+    {15.0f,  30.0f,  20.0f},
+    {30.0f,  30.0f,  40.0f},
+    {-25.0f, 30.0f,  35.0f},
+    {-10.0f, 30.0f,  15.0f},
+    {10.0f,  30.0f, -15.0f},
+    {25.0f,  30.0f, -35.0f},
+    {5.0f,   30.0f,  25.0f}
+};
+float cloudScale[10] = {0.12f, 0.12f, 0.12f, 0.12f, 0.12f, 0.12f, 0.12f, 0.12f, 0.12f, 0.12f};
+std::vector<float> treeVertices[2];
+GLuint treeVAO[2], treeVBO[2];
+int treeVertexCount[2];
+// Árvores
+glm::vec3 treePos[10] = {
+    {-20.0f, 0.0f, -30.0f},
+    {-15.0f, 0.0f, -10.0f},
+    {-10.0f, 0.0f,  10.0f},
+    {-5.0f,  0.0f,  30.0f},
+    {0.0f,   0.0f, -20.0f},
+    {5.0f,   0.0f,  20.0f},
+    {10.0f,  0.0f,  0.0f},
+    {15.0f,  0.0f, -10.0f},
+    {20.0f,  0.0f,  10.0f},
+    {25.0f,  0.0f,  30.0f}
+};
+float treeScale[10] = {0.006f, 0.008f, 0.008f, 0.009f, 0.007f, 0.007f, 0.006f, 0.008f, 0.008f, 0.009f};
+
+// Função para carregar textura de arquivo usando stb_image
+GLuint loadTexture(const char* filename) {
+    int width, height, channels;
+    unsigned char* data = stbi_load(filename, &width, &height, &channels, 0);
+    if (!data) {
+        std::cerr << "Falha ao carregar textura: " << filename << std::endl;
+        return 0;
+    }
+
+    GLenum format = GL_RGB;
+    if (channels == 1) format = GL_RED;
+    else if (channels == 3) format = GL_RGB;
+    else if (channels == 4) format = GL_RGBA;
+
+    GLuint textureID;
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_2D, textureID);
+    glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    stbi_image_free(data);
+    return textureID;
+}
+
 // ============= CALLBACKS =============
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
     if (key == GLFW_KEY_F11 && action == GLFW_PRESS) {
@@ -139,6 +232,7 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
 }
 
 // ============= GERAÇÃO DE PRIMITIVAS =============
+// Gera vértices de um cubo unitário
 void generateCube(std::vector<float>& vertices) {
     float s = 1.0f;
     float cubeData[] = {
@@ -158,23 +252,24 @@ void generateCube(std::vector<float>& vertices) {
     vertices.assign(cubeData, cubeData + sizeof(cubeData) / sizeof(float));
 }
 
+// Gera vértices de uma esfera unitária
 void generateSphere(std::vector<float>& vertices, int segments = 20) {
     float radius = 1.0f;
     std::vector<float> tempVerts;
 
     for (int lat = 0; lat <= segments; ++lat) {
-        float theta = lat * M_PI / segments;
+        float theta = lat * (float)M_PI / segments;
         float sinTheta = sin(theta);
         float cosTheta = cos(theta);
 
         for (int lon = 0; lon <= segments; ++lon) {
-            float phi = lon * 2.0 * M_PI / segments;
-            float sinPhi = sin(phi);
-            float cosPhi = cos(phi);
+            float phi = static_cast<float>(lon * 2.0 * M_PI); // segments;
+            float sinPhi = static_cast<float>(sin(phi));
+            float cosPhi = static_cast<float>(cos(phi));
 
-            float x = cosPhi * sinTheta;
-            float y = cosTheta;
-            float z = sinPhi * sinTheta;
+            float x = static_cast<float>(cosPhi * sinTheta);
+            float y = static_cast<float>(cosTheta);
+            float z = static_cast<float>(sinPhi * sinTheta);
             float u = (float)lon / segments;
             float v = (float)lat / segments;
 
@@ -202,6 +297,7 @@ void generateSphere(std::vector<float>& vertices, int segments = 20) {
     }
 }
 
+// Gera textura procedural para o chão
 GLuint generateGrassTexture() {
     int width = 256, height = 256;
     std::vector<unsigned char> data(width * height * 3);
@@ -234,6 +330,7 @@ GLuint generateGrassTexture() {
     return textureID;
 }
 
+// Configura o framebuffer para shadow mapping
 void setupShadowMapping() {
     glGenFramebuffers(1, &depthMapFBO);
     glGenTextures(1, &depthMap);
@@ -253,6 +350,7 @@ void setupShadowMapping() {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
+// Carrega modelo OBJ (sem materiais/texturas)
 bool loadOBJ(const std::string& path, std::vector<float>& vertices) {
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
@@ -294,13 +392,14 @@ bool loadOBJ(const std::string& path, std::vector<float>& vertices) {
     return true;
 }
 
+// Gera o chão quadriculado
 void generateGround(std::vector<float>& vertices, int size = GROUND_SIZE, float quadSize = GROUND_QUAD_SIZE) {
     for (int x = -size; x < size; ++x) {
         for (int z = -size; z < size; ++z) {
-            float x0 = x * quadSize, x1 = (x + 1) * quadSize;
-            float z0 = z * quadSize, z1 = (z + 1) * quadSize;
-            float u0 = x + size, u1 = x + size + 1;
-            float v0 = z + size, v1 = z + size + 1;
+            float x0 = (float)x * quadSize, x1 = (x + 1) * quadSize;
+            float z0 = (float)z * quadSize, z1 = (z + 1) * quadSize;
+            float u0 = (float)x + size, u1 = (float)x + size + 1;
+            float v0 = (float)z + size, v1 = (float)z + size + 1;
 
             vertices.insert(vertices.end(), {
                 x0, 0.0f, z0,  0.0f, 1.0f, 0.0f,  u0, v0,
@@ -315,6 +414,7 @@ void generateGround(std::vector<float>& vertices, int size = GROUND_SIZE, float 
 }
 
 // ============= LÓGICA DO JOGO =============
+// Spawna obstáculos ou colecionáveis
 void spawnObject(int type) {
     GameObject obj;
     obj.position = glm::vec3((rand() % 7 - 3) * 2.0f, 0.7f, -35.0f);
@@ -335,6 +435,7 @@ void spawnObject(int type) {
     }
 }
 
+// Atualiza estado do jogo
 void updateGame(float deltaTime, GLFWwindow* window) {
     if (gameState != PLAYING) return;
 
@@ -379,6 +480,7 @@ void updateGame(float deltaTime, GLFWwindow* window) {
         [](const GameObject& o) { return !o.active; }), collectibles.end());
 }
 
+// Processa entrada do usuário
 void processInput(GLFWwindow* window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
@@ -437,6 +539,7 @@ void processInput(GLFWwindow* window) {
     cameraPitch = glm::clamp(cameraPitch, -89.0f, 89.0f);
 }
 
+// Checa compilação de shader
 void checkShaderCompile(GLuint shader, const char* type) {
     int success;
     char infoLog[512];
@@ -447,6 +550,7 @@ void checkShaderCompile(GLuint shader, const char* type) {
     }
 }
 
+// Checa linkagem de programa
 void checkProgramLink(GLuint program) {
     int success;
     char infoLog[512];
@@ -493,6 +597,9 @@ int main() {
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     glfwSetKeyCallback(window, key_callback);
 
+    // Remover limite de FPS (desativa V-Sync)
+    //glfwSwapInterval(0);
+
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
         std::cerr << "Falha ao inicializar GLAD\n";
         return -1;
@@ -508,7 +615,8 @@ int main() {
 
     glEnable(GL_DEPTH_TEST);
 
-    if (!loadOBJ(MODEL_PATH, playerVertices)) {
+    // Carregamento dos modelos principais
+    if (!loadOBJ(IRONMAN_MODEL_PATH, playerVertices)) {
         std::cerr << "Falha ao carregar modelo - usando cubo\n";
         generateCube(playerVertices);
     }
@@ -520,6 +628,7 @@ int main() {
     generateSphere(sphereVertices, 15);
     sphereVertexCount = sphereVertices.size() / 8;
 
+    // Função para configurar VAO/VBO
     auto setupVAO = [](GLuint& vao, GLuint& vbo, const std::vector<float>& data) {
         glGenVertexArrays(1, &vao);
         glGenBuffers(1, &vbo);
@@ -536,7 +645,7 @@ int main() {
 
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindVertexArray(0);
-        };
+    };
 
     setupVAO(playerVAO, playerVBO, playerVertices);
     setupVAO(cubeVAO, cubeVBO, cubeVertices);
@@ -557,9 +666,11 @@ int main() {
         {glm::vec3(0.0f, WALL_HEIGHT / 2.0f, wallStartZ), glm::vec3(LANE_WIDTH + WALL_THICKNESS * 2, WALL_HEIGHT, WALL_THICKNESS)}
     };
 
-    groundTexture = generateGrassTexture();
+    //groundTexture = generateGrassTexture();
+    groundTexture = loadTexture("C:/Projetos/modeltest/external/textures/concretewall.jpg");
     setupShadowMapping();
 
+    // Shaders
     const char* depthVS = R"(
 #version 330 core
 layout(location = 0) in vec3 aPos;
@@ -702,6 +813,26 @@ void main() {
     std::cout << "║       CORRIDA 3D - BEM-VINDO!           ║" << std::endl;
     std::cout << "╚═════════════════════════════════════════╝\n" << std::endl;
 
+    // Carregamento dos modelos de nuvens
+    for (int i = 0; i < 5; ++i) {
+        if (!loadOBJ(CLOUD_MODEL_PATHS[i], cloudVertices[i])) {
+            std::cerr << "Falha ao carregar nuvem " << i << std::endl;
+            cloudVertices[i].clear();
+        }
+        cloudVertexCount[i] = cloudVertices[i].size() / 8;
+        setupVAO(cloudVAO[i], cloudVBO[i], cloudVertices[i]);
+    }
+  
+        // Carregamento das árvores
+    for (int i = 0; i < 2; ++i) {
+        if (!loadOBJ(TREE_MODEL_PATHS[i], treeVertices[i])) {
+            std::cerr << "Falha ao carregar árvore " << i << std::endl;
+            treeVertices[i].clear();
+        }
+        treeVertexCount[i] = treeVertices[i].size() / 8;
+        setupVAO(treeVAO[i], treeVBO[i], treeVertices[i]);
+    }
+
     while (!glfwWindowShouldClose(window)) {
         float currentTime = glfwGetTime();
         float deltaTime = currentTime - lastTime;
@@ -710,7 +841,7 @@ void main() {
         processInput(window);
         updateGame(deltaTime, window);
 
-        glm::vec3 lightPos(5.0f, 20.0f, 10.0f);
+        glm::vec3 lightPos = sunPos;
 
         float near_plane = 1.0f, far_plane = 60.0f;
         glm::mat4 lightProjection = glm::ortho(-25.0f, 25.0f, -25.0f, 25.0f, near_plane, far_plane);
@@ -728,14 +859,14 @@ void main() {
             glUniformMatrix4fv(glGetUniformLocation(depthProgram, "model"), 1, GL_FALSE, &model[0][0]);
             glBindVertexArray(vao);
             glDrawArrays(GL_TRIANGLES, 0, count);
-            };
+        };
 
         if (gameState == PLAYING) {
             glm::mat4 groundModel = glm::mat4(1.0f);
             renderDepth(groundModel, groundVAO, groundVertices.size() / 8);
 
             glm::mat4 playerModel = glm::translate(glm::mat4(1.0f), playerPos);
-            playerModel = glm::scale(playerModel, glm::vec3(0.15f));
+            playerModel = glm::scale(playerModel, glm::vec3(IRONMAN_SCALE));
             renderDepth(playerModel, playerVAO, playerVertexCount);
 
             for (const auto& obs : obstacles) {
@@ -773,18 +904,34 @@ void main() {
         if (gameState == PLAYING) {
             float yawRad = glm::radians(cameraYaw);
             float pitchRad = glm::radians(cameraPitch);
+
             glm::vec3 cameraDir(cos(yawRad) * cos(pitchRad), sin(pitchRad), sin(yawRad) * cos(pitchRad));
             cameraDir = glm::normalize(cameraDir);
 
-            cameraPos = playerPos - cameraDir * cameraDistance + glm::vec3(0.0f, cameraHeight, 0.0f);
-            view = glm::lookAt(cameraPos, playerPos, glm::vec3(0.0f, 1.0f, 0.0f));
-        }
-        else {
+            float dynamicCameraDistance = cameraDistance;
+            float minHeight = 2.0f;
+            float minDistance = 3.0f;
+            float maxDistance = cameraDistance;
+
+            cameraPos = playerPos - cameraDir * dynamicCameraDistance + glm::vec3(0.0f, cameraHeight, 0.0f);
+
+            if (cameraPos.y < minHeight) {
+                dynamicCameraDistance = minDistance;
+                cameraPos = playerPos - cameraDir * dynamicCameraDistance + glm::vec3(0.0f, cameraHeight, 0.0f);
+                if (cameraPos.y < 0.5f) cameraPos.y = 0.5f;
+                // Olha para cima (alvo acima do personagem)
+                view = glm::lookAt(cameraPos, playerPos + glm::vec3(0.0f, 5.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            } else {
+                // Comportamento padrão
+                view = glm::lookAt(cameraPos, playerPos, glm::vec3(0.0f, 1.0f, 0.0f));
+            }
+        } else {
             cameraPos = glm::vec3(0.0f, 5.0f, 10.0f);
             view = glm::lookAt(cameraPos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         }
 
         float aspectRatio = (float)currentWidth / (float)currentHeight;
+        if (aspectRatio <= 0.0f) aspectRatio = 1.0f;
         glm::mat4 projection = glm::perspective(glm::radians(FOV_DEGREES), aspectRatio, 0.1f, 100.0f);
 
         glUseProgram(mainProgram);
@@ -811,11 +958,37 @@ void main() {
 
         glUniform1i(glGetUniformLocation(mainProgram, "useTexture"), 0);
 
+        // Renderizar nuvens
+        for (int i = 0; i < 10; ++i) {
+            if (cloudVertexCount[i % 5] > 0) {
+                glUniform3f(glGetUniformLocation(mainProgram, "objectColor"), 0.95f, 0.95f, 1.0f);
+                glUniform1f(glGetUniformLocation(mainProgram, "brightness"), 2.0f);
+                glm::mat4 model = glm::translate(glm::mat4(1.0f), cloudPos[i]);
+                model = glm::scale(model, glm::vec3(cloudScale[i]));
+                glUniformMatrix4fv(glGetUniformLocation(mainProgram, "model"), 1, GL_FALSE, &model[0][0]);
+                glBindVertexArray(cloudVAO[i % 5]);
+                glDrawArrays(GL_TRIANGLES, 0, cloudVertexCount[i % 5]);
+            }
+        }
+
+        // Renderizar árvores
+        for (int i = 0; i < 10; ++i) {
+            if (treeVertexCount[i % 2] > 0) {
+                glUniform3f(glGetUniformLocation(mainProgram, "objectColor"), 0.6f, 0.5f, 0.3f);
+                glUniform1f(glGetUniformLocation(mainProgram, "brightness"), 1.2f);
+                glm::mat4 model = glm::translate(glm::mat4(1.0f), treePos[i]);
+                model = glm::scale(model, glm::vec3(treeScale[i]));
+                glUniformMatrix4fv(glGetUniformLocation(mainProgram, "model"), 1, GL_FALSE, &model[0][0]);
+                glBindVertexArray(treeVAO[i % 2]);
+                glDrawArrays(GL_TRIANGLES, 0, treeVertexCount[i % 2]);
+            }
+        }
+
         if (gameState == PLAYING) {
             glUniform3f(glGetUniformLocation(mainProgram, "objectColor"), 0.3f, 0.5f, 0.9f);
             glUniform1f(glGetUniformLocation(mainProgram, "brightness"), 1.0f);
             glm::mat4 playerModel = glm::translate(glm::mat4(1.0f), playerPos);
-            playerModel = glm::scale(playerModel, glm::vec3(0.15f));
+            playerModel = glm::scale(playerModel, glm::vec3(IRONMAN_SCALE));
             glUniformMatrix4fv(glGetUniformLocation(mainProgram, "model"), 1, GL_FALSE, &playerModel[0][0]);
             glBindVertexArray(playerVAO);
             glDrawArrays(GL_TRIANGLES, 0, playerVertexCount);
@@ -858,6 +1031,15 @@ void main() {
                 glDrawArrays(GL_TRIANGLES, 0, cubeVertexCount);
             }
         }
+
+        // Renderizar o sol (apenas esfera amarela, sem bloom)
+        glUniform3f(glGetUniformLocation(mainProgram, "objectColor"), 1.0f, 1.0f, 0.2f);
+        glUniform1f(glGetUniformLocation(mainProgram, "brightness"), 2.0f);
+        glm::mat4 sunModel = glm::translate(glm::mat4(1.0f), sunPos);
+        sunModel = glm::scale(sunModel, glm::vec3(sunScale));
+        glUniformMatrix4fv(glGetUniformLocation(mainProgram, "model"), 1, GL_FALSE, &sunModel[0][0]);
+        glBindVertexArray(sphereVAO);
+        glDrawArrays(GL_TRIANGLES, 0, sphereVertexCount);
 
         // ImGui UI
         ImGui_ImplOpenGL3_NewFrame();
@@ -912,6 +1094,16 @@ void main() {
             ImGui::SetWindowFontScale(1.0f);
 
             ImGui::End();
+
+            ImGui::SetNextWindowPos(ImVec2(10, 10));
+            ImGui::SetNextWindowSize(ImVec2(300, 140));
+            ImGui::Begin("Sol", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+            ImGui::Text("Ajuste a posição do sol:");
+            ImGui::SliderFloat("X", &sunPos.x, -50.0f, 50.0f);
+            ImGui::SliderFloat("Y", &sunPos.y, 1.0f, 50.0f);
+            ImGui::SliderFloat("Z", &sunPos.z, -50.0f, 50.0f);
+            ImGui::SliderFloat("Tamanho", &sunScale, 0.5f, 5.0f);
+            ImGui::End();
         }
         else if (gameState == GAME_OVER) {
             ImGui::SetNextWindowPos(ImVec2(currentWidth / 2.0f - 250, currentHeight / 2.0f - 200));
@@ -942,6 +1134,11 @@ void main() {
 
             ImGui::End();
         }
+
+        ImGui::SetNextWindowPos(ImVec2(10, 160));
+ImGui::SetNextWindowSize(ImVec2(350, 400));
+ImGui::Begin("Teste de Tamanho/Posição", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+ImGui::End();
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
