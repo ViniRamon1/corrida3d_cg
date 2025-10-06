@@ -69,6 +69,13 @@ struct ThrusterParticle {
     float lifetime;
 };
 
+struct CollectParticle {
+    glm::vec3 position;
+    glm::vec3 velocity;
+    float size;
+    float lifetime;
+};
+
 glm::vec3 playerPos = glm::vec3(0.0f, 0.5f, 0.0f);
 glm::vec3 playerVelocity = glm::vec3(0.0f);
 float playerSpeed = 0.05f;
@@ -81,6 +88,7 @@ int highScore = 0;
 float gameTime = 0.0f;
 
 std::vector<ThrusterParticle> thrusterParticles;
+std::vector<CollectParticle> collectParticles;
 
 float cameraDistance = CAMERA_DISTANCE;
 float cameraHeight = CAMERA_HEIGHT;
@@ -353,13 +361,46 @@ void setupVAO(GLuint& vao, GLuint& vbo, const std::vector<float>& data) {
 }
 
 // ============= LÓGICA DO JOGO =============
+bool checkPositionFree(glm::vec3 pos, float minDistance = 2.5f) {
+    for (const auto& obs : obstacles) {
+        if (obs.active && glm::length(glm::vec2(obs.position.x - pos.x, obs.position.z - pos.z)) < minDistance) {
+            return false;
+        }
+    }
+    for (const auto& col : collectibles) {
+        if (col.active && glm::length(glm::vec2(col.position.x - pos.x, col.position.z - pos.z)) < minDistance) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void spawnObject(int type) {
     if (type == 0) {
-        int numObstacles = 1 + (rand() % 3);
-        for (int i = 0; i < numObstacles; ++i) {
+        int pattern = rand() % 4;
+        std::vector<glm::vec3> positions;
+
+        if (pattern == 0) {
+            positions.push_back(glm::vec3(0.0f, 0.7f, -35.0f));
+        }
+        else if (pattern == 1) {
+            positions.push_back(glm::vec3(-3.0f, 0.7f, -35.0f));
+            positions.push_back(glm::vec3(3.0f, 0.7f, -35.0f));
+        }
+        else if (pattern == 2) {
+            positions.push_back(glm::vec3(-4.0f, 0.7f, -35.0f));
+            positions.push_back(glm::vec3(0.0f, 0.7f, -35.0f));
+            positions.push_back(glm::vec3(4.0f, 0.7f, -35.0f));
+        }
+        else {
+            float offset = (rand() % 2) ? -3.0f : 3.0f;
+            positions.push_back(glm::vec3(offset, 0.7f, -35.0f));
+            positions.push_back(glm::vec3(offset, 0.7f, -37.0f));
+        }
+
+        for (const auto& pos : positions) {
             GameObject obj;
-            float baseX = (rand() % 5 - 2) * 2.5f;
-            obj.position = glm::vec3(baseX + (i - numObstacles / 2.0f) * 2.0f, 0.7f, -35.0f);
+            obj.position = pos;
             obj.active = true;
             obj.type = 0;
             obj.scale = glm::vec3(0.8f, 1.5f, 0.8f);
@@ -368,13 +409,22 @@ void spawnObject(int type) {
         }
     }
     else {
-        GameObject obj;
-        obj.position = glm::vec3((rand() % 7 - 3) * 2.0f, 0.7f, -35.0f);
-        obj.active = true;
-        obj.type = 1;
-        obj.scale = glm::vec3(0.8f);
-        obj.color = glm::vec3(1.0f, 0.84f, 0.0f);
-        collectibles.push_back(obj);
+        int attempts = 0;
+        glm::vec3 pos;
+        do {
+            pos = glm::vec3((rand() % 7 - 3) * 2.0f, 0.7f, -35.0f);
+            attempts++;
+        } while (!checkPositionFree(pos) && attempts < 10);
+
+        if (attempts < 10) {
+            GameObject obj;
+            obj.position = pos;
+            obj.active = true;
+            obj.type = 1;
+            obj.scale = glm::vec3(0.8f);
+            obj.color = glm::vec3(1.0f, 0.84f, 0.0f);
+            collectibles.push_back(obj);
+        }
     }
 }
 
@@ -383,6 +433,9 @@ void updateGame(float deltaTime, GLFWwindow* window) {
 
     gameTime += deltaTime;
     spawnTimer += deltaTime;
+
+    gameSpeed = 0.08f + (gameTime * 0.002f);
+    spawnInterval = glm::max(0.8f, 1.2f - (gameTime * 0.01f));
 
     if (spawnTimer >= spawnInterval) {
         spawnTimer = 0.0f;
@@ -409,6 +462,17 @@ void updateGame(float deltaTime, GLFWwindow* window) {
             if (glm::length(col.position - playerPos) < 1.2f) {
                 col.active = false;
                 score += 10;
+
+                for (int i = 0; i < 15; ++i) {
+                    CollectParticle p;
+                    p.position = col.position;
+                    float angle = (rand() % 360) * M_PI / 180.0f;
+                    float speed = 0.5f + (rand() % 100) / 100.0f;
+                    p.velocity = glm::vec3(cos(angle) * speed, 1.0f + (rand() % 100) / 50.0f, sin(angle) * speed);
+                    p.size = 0.05f + (rand() % 50) / 1000.0f;
+                    p.lifetime = 1.0f;
+                    collectParticles.push_back(p);
+                }
             }
             if (col.position.z > 8.0f) col.active = false;
         }
@@ -427,6 +491,15 @@ void updateGame(float deltaTime, GLFWwindow* window) {
     }
     thrusterParticles.erase(std::remove_if(thrusterParticles.begin(), thrusterParticles.end(),
         [](const ThrusterParticle& p) { return p.lifetime <= 0.0f; }), thrusterParticles.end());
+
+    for (auto& p : collectParticles) {
+        p.lifetime -= deltaTime * 2.0f;
+        p.position += p.velocity * deltaTime;
+        p.velocity.y -= 2.0f * deltaTime;
+        p.size *= 0.96f;
+    }
+    collectParticles.erase(std::remove_if(collectParticles.begin(), collectParticles.end(),
+        [](const CollectParticle& p) { return p.lifetime <= 0.0f; }), collectParticles.end());
 
     static float particleSpawnTimer = 0.0f;
     particleSpawnTimer += deltaTime;
@@ -465,6 +538,8 @@ void processInput(GLFWwindow* window) {
             gameState = PLAYING;
             score = 0;
             gameTime = 0.0f;
+            gameSpeed = 0.08f;
+            spawnInterval = 1.2f;
             playerPos = glm::vec3(0.0f, 0.5f, 0.0f);
             playerVelocity = glm::vec3(0.0f);
             playerRotation = 0.0f;
@@ -473,6 +548,7 @@ void processInput(GLFWwindow* window) {
             obstacles.clear();
             collectibles.clear();
             thrusterParticles.clear();
+            collectParticles.clear();
         }
         return;
     }
@@ -483,6 +559,8 @@ void processInput(GLFWwindow* window) {
             gameState = PLAYING;
             score = 0;
             gameTime = 0.0f;
+            gameSpeed = 0.08f;
+            spawnInterval = 1.2f;
             playerPos = glm::vec3(0.0f, 0.5f, 0.0f);
             playerVelocity = glm::vec3(0.0f);
             playerRotation = 0.0f;
@@ -491,11 +569,14 @@ void processInput(GLFWwindow* window) {
             obstacles.clear();
             collectibles.clear();
             thrusterParticles.clear();
+            collectParticles.clear();
         }
         if (glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS) {
             gameState = MENU;
             score = 0;
             gameTime = 0.0f;
+            gameSpeed = 0.08f;
+            spawnInterval = 1.2f;
             playerPos = glm::vec3(0.0f, 0.5f, 0.0f);
             playerVelocity = glm::vec3(0.0f);
             playerRotation = 0.0f;
@@ -504,6 +585,7 @@ void processInput(GLFWwindow* window) {
             obstacles.clear();
             collectibles.clear();
             thrusterParticles.clear();
+            collectParticles.clear();
         }
         return;
     }
@@ -941,6 +1023,19 @@ void main() {
                 glDrawArrays(GL_TRIANGLES, 0, sphereVertexCount);
             }
 
+            for (const auto& particle : collectParticles) {
+                glm::vec3 color = glm::vec3(1.0f, 0.84f, 0.0f);
+                glUniform3fv(glGetUniformLocation(mainProgram, "objectColor"), 1, &color[0]);
+                glUniform1f(glGetUniformLocation(mainProgram, "brightness"), 3.0f * particle.lifetime);
+
+                glm::mat4 particleModel = glm::translate(glm::mat4(1.0f), particle.position);
+                particleModel = glm::scale(particleModel, glm::vec3(particle.size));
+
+                glUniformMatrix4fv(glGetUniformLocation(mainProgram, "model"), 1, GL_FALSE, &particleModel[0][0]);
+                glBindVertexArray(sphereVAO);
+                glDrawArrays(GL_TRIANGLES, 0, sphereVertexCount);
+            }
+
             for (const auto& obs : obstacles) {
                 if (obs.active) {
                     glUniform3fv(glGetUniformLocation(mainProgram, "objectColor"), 1, &obs.color[0]);
@@ -1022,12 +1117,16 @@ void main() {
         }
         else if (gameState == PLAYING) {
             ImGui::SetNextWindowPos(ImVec2(currentWidth - 250, 10));
-            ImGui::SetNextWindowSize(ImVec2(240, 100));
+            ImGui::SetNextWindowSize(ImVec2(240, 130));
             ImGui::Begin("HUD", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
             ImGui::SetWindowFontScale(1.5f);
             ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.0f, 1.0f), "SCORE: %d", score);
             ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "RECORDE: %d", highScore);
             ImGui::SetWindowFontScale(1.0f);
+            ImGui::Spacing();
+            float speedPercent = ((gameSpeed - 0.08f) / 0.08f) * 100.0f;
+            ImGui::ProgressBar(speedPercent / 200.0f, ImVec2(-1, 0), "");
+            ImGui::Text("Velocidade: %.0f%%", 100.0f + speedPercent);
             ImGui::End();
 
             ImGui::SetNextWindowPos(ImVec2(10, 10));
