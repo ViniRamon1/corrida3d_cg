@@ -4,7 +4,7 @@
 
 Testado no Visual Studio 2022
 
-Todos os aruivos zipados devem ser extraídos.
+Todos os arquivos zipados devem ser extraídos.
 Copie as pastas glfw34 e glad, ambos extraídos para a raiz C:/
 
 Crie uma pasta Projetos na raiz C:/
