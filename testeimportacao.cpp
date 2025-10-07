@@ -1,30 +1,31 @@
-﻿#include <iostream>
+// ================== INCLUDES E DEFINIÇÕES ==================
+#include <iostream>
 #include <vector>
 #include <cstdlib>
 #include <ctime>
 #include <string>
 #include <cmath>
 
-#include "glad/glad.h"
-#include <GLFW/glfw3.h>
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/type_ptr.hpp>
+#include "glad/glad.h" // Loader do OpenGL
+#include <GLFW/glfw3.h> // Janela e input
+#include <glm/glm.hpp> // Math para gráficos 3D
+#include <glm/gtc/matrix_transform.hpp> // Transformações 3D
+#include <glm/gtc/type_ptr.hpp> // Conversão para ponteiros
 
 #define TINYOBJLOADER_IMPLEMENTATION
-#include "external/tinyobjloader/tiny_obj_loader.h"
-#include "imgui.h"
+#include "external/tinyobjloader/tiny_obj_loader.h" // Carregamento de modelos OBJ
+#include "imgui.h" // GUI
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 #define STB_IMAGE_IMPLEMENTATION
-#include "external/stb_image.h"
+#include "external/stb_image.h" // Carregamento de imagens
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
-// ============= CONFIGURAÇÕES =============
-const std::string BASE_PATH = "C:/Users/Windows/source/repos/ViniRamon1/corrida3d_cg/external/";
+// ================== CONFIGURAÇÕES DE ARQUIVOS E CONSTANTES ==================
+const std::string BASE_PATH = "C:/Projetos/modeltest/external/";
 const std::string IRONMAN_MODEL = BASE_PATH + "models/IronMan/IronMan.obj";
 const std::string ALIEN_MODEL = BASE_PATH + "models/alien/Alien Animal.obj";
 const std::string BITCOIN_MODEL = BASE_PATH + "models/bitcoin/#bitcoin.obj";
@@ -38,6 +39,7 @@ const std::string CLOUD_MODELS[5] = {
 const std::string TREE_MODEL = BASE_PATH + "models/white_oak/white_oak.obj";
 const std::string GROUND_TEXTURE = BASE_PATH + "textures/concretewall.jpg";
 
+// Escalas e parâmetros de renderização
 const float IRONMAN_SCALE = 0.005f;
 const float ALIEN_SCALE = 0.03f;
 const float BITCOIN_SCALE = 0.025f;
@@ -51,8 +53,11 @@ const float FOV_DEGREES = 60.0f;
 const int GROUND_SIZE = 120;
 const float GROUND_QUAD_SIZE = 1.5f;
 
+
+// Estados do jogo
 enum GameState { MENU, PLAYING, GAME_OVER };
 
+// Estrutura para objetos do jogo (aliens, moedas, etc)
 struct GameObject {
     glm::vec3 position;
     glm::vec3 scale;
@@ -62,11 +67,12 @@ struct GameObject {
     int type;
 };
 
-// ============= VARIÁVEIS GLOBAIS =============
+// ================== VARIÁVEIS GLOBAIS ===============
 int currentWidth = WINDOW_WIDTH;
 int currentHeight = WINDOW_HEIGHT;
 GameState gameState = MENU;
 
+// Estruturas para partículas de efeitos
 struct ThrusterParticle {
     glm::vec3 offset;
     float size;
@@ -74,6 +80,7 @@ struct ThrusterParticle {
     float lifetime;
 };
 
+// Partículas de coleta
 struct CollectParticle {
     glm::vec3 position;
     glm::vec3 velocity;
@@ -81,6 +88,7 @@ struct CollectParticle {
     float lifetime;
 };
 
+// Partículas de velocidade
 struct SpeedParticle {
     glm::vec3 position;
     glm::vec3 velocity;
@@ -89,6 +97,7 @@ struct SpeedParticle {
     glm::vec3 color;
 };
 
+// Partículas de explosão
 struct ExplosionParticle {
     glm::vec3 position;
     glm::vec3 velocity;
@@ -97,34 +106,39 @@ struct ExplosionParticle {
     glm::vec3 color;
 };
 
+// Variáveis do jogador
 glm::vec3 playerPos = glm::vec3(0.0f, 0.5f, 0.0f);
 glm::vec3 playerVelocity = glm::vec3(0.0f);
-float playerSpeed = 0.09f;  // Aumentado de 0.07f
+float playerSpeed = 0.09f;  // Velocidade do jogador
 float playerRotation = 0.0f;
-float playerTilt = 0.0f;
-float runAnimationTime = 0.0f;
-float gameSpeed = 0.12f;  // Aumentado de 0.08f
+float playerTilt = 0.0f; // Inclinação do jogador ao virar
+float runAnimationTime = 0.0f; // Tempo para animação de corrida
+float gameSpeed = 0.12f;  // Velocidade do jogo
 int score = 0;
 int highScore = 0;
 float gameTime = 0.0f;
 
+// Vetores de partículas (thruster, coleta, velocidade, explosão)
 std::vector<ThrusterParticle> thrusterParticles;
 std::vector<CollectParticle> collectParticles;
 std::vector<SpeedParticle> speedParticles;
 std::vector<ExplosionParticle> explosionParticles;
 
+// Configs da câmera (distância, altura, ângulo, velocidade de rotação)
 float cameraDistance = CAMERA_DISTANCE;
 float cameraHeight = CAMERA_HEIGHT;
 float cameraYaw = -90.0f;
 float cameraPitch = -20.0f;
 float cameraRotSpeed = 0.8f;
 
+// Vetores de objetos do jogo
 std::vector<GameObject> obstacles;
 std::vector<GameObject> collectibles;
 const int MAX_OBJECTS = 30;
 float spawnTimer = 0.0f;
 float spawnInterval = 1.0f;
 
+// IDs de buffers e contadores de vértices para renderização no programa shader
 GLuint playerVAO, playerVBO, cubeVAO, cubeVBO, sphereVAO, sphereVBO, groundVAO, groundVBO;
 GLuint alienVAO, alienVBO, bitcoinVAO, bitcoinVBO;
 GLuint cloudVAO[5], cloudVBO[5], treeVAO, treeVBO;
@@ -135,20 +149,36 @@ int cloudVertexCount[5] = { 0 }, treeVertexCount = 0;
 bool alienModelLoaded = false;
 bool bitcoinModelLoaded = false;
 
+// Shadow mapping e textura do chão
 GLuint depthMapFBO, depthMap, groundTexture;
 glm::vec3 sunPos(5.0f, 40.0f, 10.0f);
 float sunScale = 2.0f;
 
-const int NUM_CLOUDS = 10;
+// nuvens
+const int NUM_CLOUDS = 15; 
 glm::vec3 cloudPos[NUM_CLOUDS] = {
-    {-30.0f, 30.0f, -40.0f}, {-15.0f, 30.0f, -20.0f}, {0.0f, 30.0f, 0.0f},
-    {15.0f, 30.0f, 20.0f}, {30.0f, 30.0f, 40.0f}, {-25.0f, 30.0f, 35.0f},
-    {-10.0f, 30.0f, 15.0f}, {10.0f, 30.0f, -15.0f}, {25.0f, 30.0f, -35.0f},
-    {5.0f, 30.0f, 25.0f}
+    {-30.0f, 30.0f, -40.0f}, 
+    {-15.0f, 30.0f, -20.0f}, 
+    {0.0f, 30.0f, 0.0f},
+    {15.0f, 30.0f, 20.0f}, 
+    {30.0f, 30.0f, 40.0f}, 
+    {-25.0f, 30.0f, 35.0f},
+    {-10.0f, 30.0f, 15.0f}, 
+    {10.0f, 30.0f, -15.0f}, 
+    {25.0f, 30.0f, -35.0f},
+    {5.0f, 30.0f, -25.0f},
+    {-35.0f, 32.0f, -30.0f},
+    {-20.0f, 20.0f, -50.0f},
+    {20.0f, 12.0f, -50.0f},
+    {-50.0f, 10.0f, 0.0f},
+    {-50.0f, 12.0f, 20.0f}
 };
-float cloudScale[NUM_CLOUDS] = { 0.12f, 0.12f, 0.12f, 0.12f, 0.12f, 0.12f, 0.12f, 0.12f, 0.12f, 0.12f };
 
-// ÁRVORES MÚLTIPLAS - 3 FILEIRAS DE CADA LADO (mais conservador)
+// Mesmas escalas para as novas nuvens
+float cloudScale[NUM_CLOUDS] = { 0.20f, 0.21f, 0.21f, 0.22f, 0.22f, 0.20f, 0.18f, 0.20f, 0.21f, 0.20f,
+                                 0.20f, 0.21f, 0.21f, 0.22f, 0.22f };
+
+// Arvores 
 const int NUM_TREE_ROWS = 3;
 const int TREES_PER_ROW = 12;
 const int NUM_TREES = NUM_TREE_ROWS * TREES_PER_ROW * 2;
@@ -156,20 +186,22 @@ std::vector<glm::vec3> treePositions;
 std::vector<float> treeScales;
 std::vector<float> treeRotations;
 
-// Contador para moedas raras
+// Contador para spawn de moedas raras
 int alienSpawnCount = 0;
 
-// ============= FUNÇÕES AUXILIARES =============
+// ================== FUNÇÕES AUXILIARES ==================
+// Gera um float aleatório entre min e max
 float randomFloat(float min, float max) {
     return min + static_cast<float>(rand()) / (static_cast<float>(RAND_MAX / (max - min)));
 }
 
+// Inicializa posições, escalas e rotações das árvores
 void initializeTrees() {
     treePositions.clear();
     treeScales.clear();
     treeRotations.clear();
 
-    // Lado esquerdo - 3 fileiras
+    // Lado esquerdo
     for (int row = 0; row < NUM_TREE_ROWS; row++) {
         float xPos = -12.0f - row * 3.0f;
         for (int i = 0; i < TREES_PER_ROW; i++) {
@@ -179,8 +211,7 @@ void initializeTrees() {
             treeRotations.push_back(randomFloat(0.0f, 360.0f));
         }
     }
-
-    // Lado direito - 3 fileiras
+    // Lado direito
     for (int row = 0; row < NUM_TREE_ROWS; row++) {
         float xPos = 12.0f + row * 3.0f;
         for (int i = 0; i < TREES_PER_ROW; i++) {
@@ -192,6 +223,7 @@ void initializeTrees() {
     }
 }
 
+// Carrega uma textura de arquivo e retorna o ID opengl da textura
 GLuint loadTexture(const char* filename) {
     int width, height, channels;
     unsigned char* data = stbi_load(filename, &width, &height, &channels, 0);
@@ -199,9 +231,7 @@ GLuint loadTexture(const char* filename) {
         std::cerr << "Falha ao carregar textura: " << filename << std::endl;
         return 0;
     }
-
     GLenum format = (channels == 1) ? GL_RED : (channels == 3) ? GL_RGB : GL_RGBA;
-
     GLuint textureID;
     glGenTextures(1, &textureID);
     glBindTexture(GL_TEXTURE_2D, textureID);
@@ -211,11 +241,11 @@ GLuint loadTexture(const char* filename) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
     stbi_image_free(data);
     return textureID;
 }
 
+// Verifica se o shader compilou corretamente
 void checkShaderCompile(GLuint shader, const char* type) {
     int success;
     char infoLog[512];
@@ -226,6 +256,7 @@ void checkShaderCompile(GLuint shader, const char* type) {
     }
 }
 
+// Verifica se o programa de shaders linkou corretamente
 void checkProgramLink(GLuint program) {
     int success;
     char infoLog[512];
@@ -236,12 +267,12 @@ void checkProgramLink(GLuint program) {
     }
 }
 
-// ============= CALLBACKS =============
+// ================== CALLBACKS DE INPUT E JANELA =============
+// Alterna entre tela cheia e janela ao pressionar F11
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
     if (key == GLFW_KEY_F11 && action == GLFW_PRESS) {
         static bool isFullscreen = FULLSCREEN;
         isFullscreen = !isFullscreen;
-
         if (isFullscreen) {
             GLFWmonitor* monitor = glfwGetPrimaryMonitor();
             const GLFWvidmode* mode = glfwGetVideoMode(monitor);
@@ -257,13 +288,15 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
     }
 }
 
+// Atualiza o viewport ao redimensionar a janela
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
     glViewport(0, 0, width, height);
     currentWidth = width;
     currentHeight = height;
 }
 
-// ============= GERAÇÃO DE GEOMETRIA =============
+// ================ GERAÇÃO DE GEOMETRIA ==================
+
 void generateCube(std::vector<float>& vertices) {
     float s = 1.0f;
     float cubeData[] = {
@@ -321,6 +354,7 @@ void generateSphere(std::vector<float>& vertices, int segments = 20) {
     }
 }
 
+// Gera o chão como uma malha de quads
 void generateGround(std::vector<float>& vertices, int size = GROUND_SIZE, float quadSize = GROUND_QUAD_SIZE) {
     for (int x = -size; x < size; ++x) {
         for (int z = -size; z < size; ++z) {
@@ -337,6 +371,7 @@ void generateGround(std::vector<float>& vertices, int size = GROUND_SIZE, float 
     }
 }
 
+// Configura o framebuffer e textura para shadow mapping
 void setupShadowMapping() {
     glGenFramebuffers(1, &depthMapFBO);
     glGenTextures(1, &depthMap);
@@ -356,6 +391,7 @@ void setupShadowMapping() {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
+// Carrega um modelo OBJ 
 bool loadOBJ(const std::string& path, std::vector<float>& vertices) {
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
@@ -398,6 +434,7 @@ bool loadOBJ(const std::string& path, std::vector<float>& vertices) {
     return true;
 }
 
+// Cria e configura VAO/VBO para um objeto
 void setupVAO(GLuint& vao, GLuint& vbo, const std::vector<float>& data) {
     glGenVertexArrays(1, &vao);
     glGenBuffers(1, &vbo);
@@ -416,7 +453,8 @@ void setupVAO(GLuint& vao, GLuint& vbo, const std::vector<float>& data) {
     glBindVertexArray(0);
 }
 
-// ============= LÓGICA DO JOGO =============
+// ================ LÓGICA DO JOGO ==================
+// Verifica se uma posição está livre para spawn (aparecimento) de objeto
 bool checkPositionFree(glm::vec3 pos, float minDistance = 2.5f) {
     for (const auto& obs : obstacles) {
         if (obs.active && glm::length(glm::vec2(obs.position.x - pos.x, obs.position.z - pos.z)) < minDistance) {
@@ -431,6 +469,7 @@ bool checkPositionFree(glm::vec3 pos, float minDistance = 2.5f) {
     return true;
 }
 
+// Spawna aliens ou moedas no cenário
 void spawnObject(int type) {
     if (type == 0) {
         // REDUZIDO: 1 a 3 aliens por spawn (menos poluído)
@@ -509,6 +548,7 @@ void spawnObject(int type) {
     }
 }
 
+// Cria partículas de explosão na posição informada
 void createExplosion(glm::vec3 position) {
     for (int i = 0; i < 40; ++i) {
         ExplosionParticle p;
@@ -543,6 +583,7 @@ void createExplosion(glm::vec3 position) {
     }
 }
 
+// Atualiza toda a lógica do jogo a cada frame
 void updateGame(float deltaTime, GLFWwindow* window) {
     if (gameState != PLAYING) return;
 
@@ -562,7 +603,7 @@ void updateGame(float deltaTime, GLFWwindow* window) {
     for (auto& obs : obstacles) {
         if (obs.active) {
             obs.position.z += gameSpeed;
-            if (glm::length(obs.position - playerPos) < 1.2f) {
+			if (glm::length(obs.position - playerPos) < 0.6) {
                 createExplosion(obs.position);
                 gameState = GAME_OVER;
                 if (score > highScore) highScore = score;
@@ -710,6 +751,7 @@ void updateGame(float deltaTime, GLFWwindow* window) {
     }
 }
 
+// Processo de input do teclado e atualização de estado do jogador/câmera
 void processInput(GLFWwindow* window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
@@ -781,12 +823,14 @@ void processInput(GLFWwindow* window) {
         return;
     }
 
+	// Movimento do jogador
     glm::vec3 moveDir(0.0f);
     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) moveDir.x -= 1.0f;
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) moveDir.x += 1.0f;
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) moveDir.z -= 1.0f;
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) moveDir.z += 1.0f;
 
+	// Normaliza direção e aplica velocidade
     if (glm::length(moveDir) > 0.0f) {
         playerVelocity = glm::normalize(moveDir) * playerSpeed;
         playerPos += playerVelocity;
@@ -802,6 +846,7 @@ void processInput(GLFWwindow* window) {
         playerTilt *= 0.9f;
     }
 
+  
     if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) cameraYaw -= cameraRotSpeed;
     if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) cameraYaw += cameraRotSpeed;
     if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) cameraPitch += cameraRotSpeed;
@@ -810,19 +855,19 @@ void processInput(GLFWwindow* window) {
     cameraPitch = glm::clamp(cameraPitch, -89.0f, 89.0f);
 }
 
-// ============= MAIN =============
+// ================ MAIN ==================
 int main() {
+    // Inicialização de random, GLFW, janela e contexto OpenGL
     srand(static_cast<unsigned>(time(0)));
-
     if (!glfwInit()) {
         std::cerr << "Falha ao inicializar GLFW\n";
         return -1;
     }
-
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
+    // Criação da janela (fullscreen ou janela normal)
     GLFWwindow* window;
     if (FULLSCREEN) {
         GLFWmonitor* monitor = glfwGetPrimaryMonitor();
@@ -834,22 +879,22 @@ int main() {
     else {
         window = glfwCreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Corrida 3D - Iron Man", nullptr, nullptr);
     }
-
     if (!window) {
         std::cerr << "Falha ao criar janela\n";
         glfwTerminate();
         return -1;
     }
-
     glfwMakeContextCurrent(window);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     glfwSetKeyCallback(window, key_callback);
 
+    // Inicialização do GLAD (OpenGL loader)
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
         std::cerr << "Falha ao inicializar GLAD\n";
         return -1;
     }
 
+    // Inicialização do ImGui (interface gráfica)
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
@@ -857,16 +902,18 @@ int main() {
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 330");
 
+    // Habilita profundidade e blending
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
+    // Inicializa árvores e buffers de vértices
     initializeTrees();
-
     std::vector<float> playerVertices, cubeVertices, sphereVertices, groundVertices;
     std::vector<float> alienVertices, bitcoinVertices;
     std::vector<float> cloudVertices[5], treeVertices;
 
+    // Carrega modelos ou usa formas básicas caso falhe
     if (!loadOBJ(IRONMAN_MODEL, playerVertices)) {
         std::cerr << "Modelo Iron Man nao encontrado, usando cubo\n";
         generateCube(playerVertices);
@@ -893,14 +940,14 @@ int main() {
         bitcoinModelLoaded = false;
     }
 
+    // Gera formas básicas
     generateCube(cubeVertices);
     cubeVertexCount = cubeVertices.size() / 8;
-
     generateSphere(sphereVertices, 15);
     sphereVertexCount = sphereVertices.size() / 8;
-
     generateGround(groundVertices);
 
+    // Configura VAOs/VBOs
     setupVAO(playerVAO, playerVBO, playerVertices);
     setupVAO(cubeVAO, cubeVBO, cubeVertices);
     setupVAO(sphereVAO, sphereVBO, sphereVertices);
@@ -912,43 +959,55 @@ int main() {
     if (bitcoinModelLoaded) {
         setupVAO(bitcoinVAO, bitcoinVBO, bitcoinVertices);
     }
-
     for (int i = 0; i < 5; ++i) {
         if (loadOBJ(CLOUD_MODELS[i], cloudVertices[i])) {
             cloudVertexCount[i] = cloudVertices[i].size() / 8;
             setupVAO(cloudVAO[i], cloudVBO[i], cloudVertices[i]);
         }
     }
-
     if (loadOBJ(TREE_MODEL, treeVertices)) {
         treeVertexCount = treeVertices.size() / 8;
         setupVAO(treeVAO, treeVBO, treeVertices);
     }
 
+    // --- SHADOW MAPPING ---
+    // Shadow mapping é uma técnica para gerar sombras realistas. O processo envolve:
+    // 1. Renderizar a cena a partir da perspectiva da luz (sol), gravando a profundidade de cada fragmento em um "depth map".
+    // 2. No render principal, para cada fragmento, comparar sua profundidade com o valor do depth map para saber se está em sombra.
+    // O framebuffer e a textura de profundidade são configurados em setupShadowMapping().
     groundTexture = loadTexture(GROUND_TEXTURE.c_str());
     setupShadowMapping();
 
-    const char* depthVS = R"(
+    // --- SHADERS ---
+    // Os shaders são pequenos programas executados na GPU. Aqui, temos dois principais:
+    // - depthVS/depthFS: usados para gerar o mapa de profundidade (shadow map).
+    // - mainVS/mainFS: usados para renderizar a cena principal, aplicando luz, sombra, textura e neblina.
+    // O código compila, linka e valida cada shader, e depois os utiliza durante o render.
+
+	const char* depthVS = R"( // Vertex shader para depth map
 #version 330 core
 layout(location = 0) in vec3 aPos;
 uniform mat4 lightSpaceMatrix;
 uniform mat4 model;
 void main() { gl_Position = lightSpaceMatrix * model * vec4(aPos, 1.0); }
 )";
-    const char* depthFS = R"(
+	const char* depthFS = R"( // Fragment shader vazio, só precisamos da profundidade
 #version 330 core
 void main() {}
 )";
 
+	// Compila e linka shaders de depth map
     GLuint depthVert = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(depthVert, 1, &depthVS, nullptr);
     glCompileShader(depthVert);
     checkShaderCompile(depthVert, "Depth VS");
 
+	// Fragment shader vazio
     GLuint depthFrag = glCreateShader(GL_FRAGMENT_SHADER);
     glShaderSource(depthFrag, 1, &depthFS, nullptr);
     glCompileShader(depthFrag);
 
+	// Linka programa de depth map
     GLuint depthProgram = glCreateProgram();
     glAttachShader(depthProgram, depthVert);
     glAttachShader(depthProgram, depthFrag);
@@ -957,23 +1016,26 @@ void main() {}
     glDeleteShader(depthVert);
     glDeleteShader(depthFrag);
 
-    const char* mainVS = R"(
+	const char* mainVS = R"( // Vertex shader principal
 #version 330 core
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aNormal;
 layout(location = 2) in vec2 aTexCoord;
 
+// Váriaveis de saída para o fragment shader
 out vec3 FragPos;
 out vec3 Normal;
 out vec2 TexCoord;
 out vec4 FragPosLightSpace;
 
+// Matrizes uniformes (definidas no programa principal)
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
 uniform mat4 lightSpaceMatrix;
 
-void main() {
+// 
+void main() { 
     FragPos = vec3(model * vec4(aPos, 1.0));
     Normal = mat3(transpose(inverse(model))) * aNormal;
     TexCoord = aTexCoord;
@@ -981,16 +1043,19 @@ void main() {
     gl_Position = projection * view * model * vec4(aPos, 1.0);
 }
 )";
-
+	// Fragment shader principal
     const char* mainFS = R"(
-#version 330 core
+#version 330 core 
+// Váriaveis de entrada do vertex shader
 in vec3 FragPos;
 in vec3 Normal;
 in vec2 TexCoord;
 in vec4 FragPosLightSpace;
 
+// Saída final da cor do fragmento
 out vec4 FragColor;
 
+// Texturas e variáveis uniformes
 uniform sampler2D texture1;
 uniform sampler2D shadowMap;
 uniform vec3 lightPos;
@@ -999,11 +1064,14 @@ uniform vec3 objectColor;
 uniform int useTexture;
 uniform float brightness;
 
+// Função para calcular sombra usando shadow mapping com PCF (Percentage Closer Filtering)
 float ShadowCalculation(vec4 fragPosLightSpace) {
+    // Realiza a transformação de coordenadas do espaço da luz para o espaço de textura
     vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
     projCoords = projCoords * 0.5 + 0.5;
     if(projCoords.z > 1.0) return 0.0;
     
+   
     float closestDepth = texture(shadowMap, projCoords.xy).r;
     float currentDepth = projCoords.z;
     vec3 normal = normalize(Normal);
@@ -1020,6 +1088,7 @@ float ShadowCalculation(vec4 fragPosLightSpace) {
     }
     return shadow / 9.0;
 }
+
 
 void main() {
     vec3 color = (useTexture == 1) ? texture(texture1, TexCoord).rgb : objectColor;
@@ -1049,6 +1118,7 @@ void main() {
 }
 )";
 
+	// Compila e linka shaders principais
     GLuint mainVert = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(mainVert, 1, &mainVS, nullptr);
     glCompileShader(mainVert);
@@ -1059,6 +1129,7 @@ void main() {
     glCompileShader(mainFrag);
     checkShaderCompile(mainFrag, "Main FS");
 
+	// Linka programa principal
     GLuint mainProgram = glCreateProgram();
     glAttachShader(mainProgram, mainVert);
     glAttachShader(mainProgram, mainFrag);
@@ -1069,29 +1140,35 @@ void main() {
 
     float lastTime = glfwGetTime();
 
+    // ================== LOOP PRINCIPAL DO JOGO ==================
     while (!glfwWindowShouldClose(window)) {
         float currentTime = glfwGetTime();
         float deltaTime = currentTime - lastTime;
         lastTime = currentTime;
 
+        // Processa input e atualiza logica do jogo
         processInput(window);
         updateGame(deltaTime, window);
 
+        // Atualiza animação do personagem
         if (gameState == PLAYING) {
             runAnimationTime += deltaTime * 10.0f;
         }
 
+		// Inclina o personagem para frente ao voar
         float flyTilt = 60.0f;
         if (glm::length(playerVelocity) > 0.01f) {
             flyTilt = 70.0f + sin(runAnimationTime) * 5.0f;
         }
 
+        // Calcula transformações de câmera e luz
         glm::vec3 lightPos = sunPos;
         float near_plane = 1.0f, far_plane = 60.0f;
         glm::mat4 lightProjection = glm::ortho(-25.0f, 25.0f, -25.0f, 25.0f, near_plane, far_plane);
         glm::mat4 lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         glm::mat4 lightSpaceMatrix = lightProjection * lightView;
 
+		// Renderiza mapa de profundidade (shadow map)
         glUseProgram(depthProgram);
         glUniformMatrix4fv(glGetUniformLocation(depthProgram, "lightSpaceMatrix"), 1, GL_FALSE, &lightSpaceMatrix[0][0]);
 
@@ -1099,12 +1176,14 @@ void main() {
         glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
         glClear(GL_DEPTH_BUFFER_BIT);
 
+		// Função lambda para renderizar objetos no mapa de profundidade
         auto renderDepth = [&](const glm::mat4& model, GLuint vao, int count) {
             glUniformMatrix4fv(glGetUniformLocation(depthProgram, "model"), 1, GL_FALSE, &model[0][0]);
             glBindVertexArray(vao);
             glDrawArrays(GL_TRIANGLES, 0, count);
             };
 
+		// Renderiza chão, jogador, obstáculos e árvores
         if (gameState == PLAYING) {
             renderDepth(glm::mat4(1.0f), groundVAO, groundVertices.size() / 8);
 
@@ -1118,8 +1197,10 @@ void main() {
             playerModel = glm::scale(playerModel, glm::vec3(IRONMAN_SCALE));
             renderDepth(playerModel, playerVAO, playerVertexCount);
 
+			// Renderiza obstáculos
             for (const auto& obs : obstacles) {
                 if (obs.active) {
+					// Renderiza alien ou cubo dependendo se o modelo foi carregado
                     glm::mat4 m = glm::translate(glm::mat4(1.0f), obs.position);
                     m = glm::rotate(m, glm::radians(obs.rotation), glm::vec3(0.0f, 1.0f, 0.0f));
                     if (alienModelLoaded) {
@@ -1133,6 +1214,7 @@ void main() {
                 }
             }
 
+			// Renderiza moedas
             for (const auto& col : collectibles) {
                 if (col.active) {
                     glm::mat4 m = glm::translate(glm::mat4(1.0f), col.position);
@@ -1143,6 +1225,7 @@ void main() {
                 }
             }
 
+			// Renderiza árvores
             if (treeVertexCount > 0) {
                 for (size_t i = 0; i < treePositions.size(); ++i) {
                     glm::mat4 model = glm::translate(glm::mat4(1.0f), treePositions[i]);
@@ -1153,6 +1236,7 @@ void main() {
             }
         }
 
+		// Renderiza partículas no mapa de profundidade
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
         glViewport(0, 0, currentWidth, currentHeight);
@@ -1167,6 +1251,7 @@ void main() {
         glm::vec3 cameraPos;
         glm::mat4 view;
 
+		// Atualiza posição da câmera
         if (gameState == PLAYING) {
             float yawRad = glm::radians(cameraYaw);
             float pitchRad = glm::radians(cameraPitch);
@@ -1174,11 +1259,13 @@ void main() {
             cameraDir = glm::normalize(cameraDir);
 
             cameraPos = playerPos - cameraDir * cameraDistance + glm::vec3(0.0f, cameraHeight, 0.0f);
+			// Evita que a câmera fique abaixo do chão
             if (cameraPos.y < 2.0f) {
                 cameraPos = playerPos - cameraDir * 3.0f + glm::vec3(0.0f, cameraHeight, 0.0f);
                 if (cameraPos.y < 0.5f) cameraPos.y = 0.5f;
                 view = glm::lookAt(cameraPos, playerPos + glm::vec3(0.0f, 5.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
             }
+            
             else {
                 view = glm::lookAt(cameraPos, playerPos, glm::vec3(0.0f, 1.0f, 0.0f));
             }
@@ -1215,6 +1302,7 @@ void main() {
 
         glUniform1i(glGetUniformLocation(mainProgram, "useTexture"), 0);
 
+		// Renderiza nuvens
         for (int i = 0; i < NUM_CLOUDS; ++i) {
             if (cloudVertexCount[i % 5] > 0) {
                 glUniform3f(glGetUniformLocation(mainProgram, "objectColor"), 0.95f, 0.95f, 1.0f);
@@ -1225,6 +1313,7 @@ void main() {
                 glDrawArrays(GL_TRIANGLES, 0, cloudVertexCount[i % 5]);
             }
         }
+
 
         if (treeVertexCount > 0) {
             glUniform3f(glGetUniformLocation(mainProgram, "objectColor"), 0.6f, 0.5f, 0.3f);
@@ -1253,7 +1342,7 @@ void main() {
             glBindVertexArray(playerVAO);
             glDrawArrays(GL_TRIANGLES, 0, playerVertexCount);
 
-            // Thruster particles
+			// Particulas do thruster (propulsor)
             for (const auto& particle : thrusterParticles) {
                 glm::vec3 color = glm::mix(
                     glm::vec3(0.2f, 0.5f, 1.0f),
@@ -1274,7 +1363,7 @@ void main() {
                 glDrawArrays(GL_TRIANGLES, 0, sphereVertexCount);
             }
 
-            // Speed particles (motion blur)
+			// Partículas de velocidade
             for (const auto& particle : speedParticles) {
                 glUniform3fv(glGetUniformLocation(mainProgram, "objectColor"), 1, &particle.color[0]);
                 glUniform1f(glGetUniformLocation(mainProgram, "brightness"), 1.5f * particle.lifetime);
@@ -1287,7 +1376,7 @@ void main() {
                 glDrawArrays(GL_TRIANGLES, 0, sphereVertexCount);
             }
 
-            // Collect particles
+			// Moedas coletadas (particulas de coleta)
             for (const auto& particle : collectParticles) {
                 glm::vec3 color = glm::vec3(1.0f, 0.84f, 0.0f);
                 glUniform3fv(glGetUniformLocation(mainProgram, "objectColor"), 1, &color[0]);
@@ -1301,7 +1390,7 @@ void main() {
                 glDrawArrays(GL_TRIANGLES, 0, sphereVertexCount);
             }
 
-            // Explosion particles
+			// Particulas de explosão
             for (const auto& particle : explosionParticles) {
                 glUniform3fv(glGetUniformLocation(mainProgram, "objectColor"), 1, &particle.color[0]);
                 glUniform1f(glGetUniformLocation(mainProgram, "brightness"), 4.0f * particle.lifetime);
@@ -1373,6 +1462,7 @@ void main() {
         glBindVertexArray(sphereVAO);
         glDrawArrays(GL_TRIANGLES, 0, sphereVertexCount);
 
+        // ================== RENDERIZAÇÃO DA INTERFACE COM IMGUI ==================
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
@@ -1484,10 +1574,12 @@ void main() {
         glfwPollEvents();
     }
 
+    // ================== LIMPEZA FINAL ==================
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
 
+    // Libera buffers e recursos OpenGL
     glDeleteVertexArrays(1, &playerVAO);
     glDeleteBuffers(1, &playerVBO);
     glDeleteVertexArrays(1, &cubeVAO);
