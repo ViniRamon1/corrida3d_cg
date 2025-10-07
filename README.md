@@ -62,9 +62,6 @@ Um jogo de corrida endless runner em 3D desenvolvido com OpenGL, C++ e GLFW, apr
 ```
 corrida3d_cg/
 ├── external/
-│   ├── glfw/                 # Biblioteca GLFW (opcional, se quiser local)
-│   ├── glad/                 # Loader OpenGL
-│   ├── glm/                  # Matemática 3D (EXTRAIR AQUI!)
 │   ├── imgui/                # Interface gráfica
 │   ├── tinyobjloader/        # Carregador de .OBJ
 │   ├── stb_image.h           # Carregador de imagens
