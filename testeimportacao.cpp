@@ -1394,8 +1394,6 @@ void main() {
             ImGui::Text("OBJETIVO:");
             ImGui::BulletText("Desvie dos ALIENS em ALTA VELOCIDADE!");
             ImGui::BulletText("Colete BITCOINS DOURADOS RAROS (+10 pontos)");
-            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "   * Moedas aparecem apenas 1 a cada ~10 aliens!");
-            ImGui::TextColored(ImVec4(0.3f, 1.0f, 1.0f, 1.0f), "   * Jogo 50% mais rapido - Reaja rapido!");
             ImGui::Spacing(); ImGui::Spacing();
             ImGui::Separator();
             ImGui::Spacing(); ImGui::Spacing();
@@ -1407,19 +1405,6 @@ void main() {
             ImGui::Spacing(); ImGui::Spacing();
             ImGui::Separator();
             ImGui::Spacing(); ImGui::Spacing();
-
-            ImGui::Text("NOVIDADES:");
-            ImGui::BulletText("Motion Blur e particulas de velocidade!");
-            ImGui::BulletText("Floresta mais densa (3 fileiras de cada lado)");
-            ImGui::BulletText("Fog/Neblina atmosferica");
-            ImGui::BulletText("Ceu gradiente dinamico");
-            ImGui::BulletText("Explosoes de colisao espetaculares");
-            ImGui::BulletText("Velocidade aumentada em 50%!");
-            ImGui::BulletText("Menos aliens, mais estrategia!");
-            ImGui::BulletText("Moedas raras - muito mais desafiador!");
-            ImGui::Spacing(); ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::Spacing();
 
             ImGui::Text("STATUS DOS MODELOS:");
             if (alienModelLoaded) {
