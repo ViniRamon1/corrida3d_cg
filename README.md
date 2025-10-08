@@ -44,6 +44,8 @@ Um jogo de corrida endless runner em 3D desenvolvido com OpenGL, C++ e GLFW, apr
 
 ### Software Necessário:
 - **Visual Studio 2019 ou superior** (com C++ Desktop Development)
+- ** Requer que o Visual Studio tenha instalado nele o Desenvolvimento para desktop com C++ (Crie aplicativos C++ modernos para Windows usando as ferramentas de sua escolha, incluindo MSCV, Clang, **CMAKE**...
+- Confira se está instalado com Visual Studio setup. Caso não esteja, fazer o download da ferramenta base.
 - **Windows 10/11** (64-bit)
 - **Git** (para clonar o repositório)
 
@@ -174,7 +176,15 @@ C:/Projetos/modeltest/external/glm/glm/glm.hpp
 2. Selecione **"Abrir uma pasta"**
 3. Navegue até a pasta `corrida3d_cg`
 
-#### 3.2 Configurar CMakeLists.txt ou Projeto
+#### 3.2 Executando
+1. Clique em salvar tudo
+2. Botão direito em testeimportacao.cpp -> Definir como item de inicialização
+3. Clique em Compilação -> Criar tudo
+4. Depurar -> Iniciar depuração
+
+Se fez todos os passos corretamente, o código deve executar sem problemas. Caso ocorram erros de caminho de objetos, alterar BASE_PATH de acordo. No caso de erro de vinculação de glm, glfw ou glad, alterar cmakelists.txt de acordo.
+
+#### (Alternativamente, caso não tenha funcionado com o passo 3.2 anterior, seguir os próximos passos) 3.2 Configurar CMakeLists.txt ou Projeto
 
 Se estiver usando um `.sln`, configure as propriedades:
 
