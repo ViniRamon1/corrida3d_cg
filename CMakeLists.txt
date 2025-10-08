@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.10)
 project(testeimportacao)
 set(CMAKE_CXX_STANDARD 17)
 
@@ -6,12 +6,15 @@ set(CMAKE_CXX_STANDARD 17)
 include_directories(
     ${PROJECT_SOURCE_DIR}/glad/include
     C:/glfw34/install/include
+    C:/glfw34/glfw34/install/include
     C:/Projetos/glm
+    C:/Projetos/glm/glm
 )
 
 # Diretórios de bibliotecas
 link_directories(
     C:/glfw34/install/lib
+    C:/glfw34/glfw34/install/lib
 )
 
 # TinyObjLoader
