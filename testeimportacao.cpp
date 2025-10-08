@@ -25,7 +25,7 @@
 #endif
 
 // ================== CONFIGURAÇÕES DE ARQUIVOS E CONSTANTES ==================
-const std::string BASE_PATH = "C:/Projetos/modeltest/external/";
+const std::string BASE_PATH = "C:/Projetos/corrida3d_cg/external/";
 const std::string IRONMAN_MODEL = BASE_PATH + "models/IronMan/IronMan.obj";
 const std::string ALIEN_MODEL = BASE_PATH + "models/alien/Alien Animal.obj";
 const std::string BITCOIN_MODEL = BASE_PATH + "models/bitcoin/#bitcoin.obj";
